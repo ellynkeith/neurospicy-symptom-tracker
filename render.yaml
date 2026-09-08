@@ -15,3 +15,7 @@ services:
         sync: false
       - key: APP_PASSWORD
         sync: false
+      - key: DEMO_USERNAME
+        sync: false
+      - key: DEMO_PASSWORD
+        sync: false

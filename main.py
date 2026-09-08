@@ -1,13 +1,15 @@
 import base64
 import hmac
+import itertools
 import os
+import threading
 from contextlib import contextmanager
-from datetime import date, time
+from datetime import date, time, timedelta
 from typing import Optional
 
 import psycopg2
 import psycopg2.extras
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -22,6 +24,13 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 # the app off of casual/accidental access, not to withstand a targeted attack.
 APP_USERNAME = os.environ.get("APP_USERNAME", "family")
 APP_PASSWORD = os.environ.get("APP_PASSWORD")
+
+# Optional second login for letting someone click around without seeing real
+# data. Demo requests never touch Postgres -- they're served entirely out of
+# the in-memory DemoStore below, which resets on every server restart. If
+# DEMO_PASSWORD isn't set, the demo login is simply disabled.
+DEMO_USERNAME = os.environ.get("DEMO_USERNAME", "demo")
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD")
 
 # Paths that should stay reachable without logging in, e.g. so Render's own
 # health checks don't get blocked by auth and mark the service unhealthy.
@@ -48,9 +57,19 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
                 username, _, password = decoded.partition(":")
             except Exception:
                 username, password = "", ""
+
             if hmac.compare_digest(username, APP_USERNAME) and hmac.compare_digest(
                 password, APP_PASSWORD
             ):
+                request.state.demo = False
+                return await call_next(request)
+
+            if (
+                DEMO_PASSWORD
+                and hmac.compare_digest(username, DEMO_USERNAME)
+                and hmac.compare_digest(password, DEMO_PASSWORD)
+            ):
+                request.state.demo = True
                 return await call_next(request)
 
         return Response(
@@ -80,6 +99,140 @@ DEFAULT_CATEGORIES = [
     "rigidity",
     "aggression",
 ]
+
+
+def is_demo(request: Request) -> bool:
+    return getattr(request.state, "demo", False)
+
+
+# ---------------------------------------------------------------------------
+# Demo mode: an in-memory store so a demo visitor can fully click around --
+# add, filter, delete -- without ever reading or writing the real database.
+# Shared across all demo visitors (not per-session) and resets to the seed
+# data below on every server restart.
+# ---------------------------------------------------------------------------
+class DemoStore:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._id_counter = itertools.count(1)
+        self.categories = list(DEFAULT_CATEGORIES)
+        self.entries = []
+        self._seed()
+
+    def _next_id(self):
+        return next(self._id_counter)
+
+    def _seed(self):
+        today = date.today()
+        seed_rows = [
+            dict(
+                days_ago=0, entry_time="16:45", category="meltdown", setting="home",
+                duration_minutes=20, intensity=4, trigger="transition from screen time",
+                notes="Took about 20 min to settle. Dimming the lights helped.",
+                logged_by="Demo Parent",
+            ),
+            dict(
+                days_ago=0, entry_time="08:15", category="sensory avoidance", setting="school",
+                duration_minutes=5, intensity=2, trigger="loud cafeteria",
+                notes="Asked for noise-canceling headphones, worked well.",
+                logged_by="Demo Teacher",
+            ),
+            dict(
+                days_ago=1, entry_time="18:30", category="stimming", setting="home",
+                duration_minutes=None, intensity=1, trigger=None,
+                notes="Hand-flapping during favorite show, seemed happy/regulated.",
+                logged_by="Demo Parent",
+            ),
+            dict(
+                days_ago=1, entry_time="07:50", category="rigidity", setting="transitions",
+                duration_minutes=10, intensity=3, trigger="unexpected change in morning routine",
+                notes="Wanted the usual breakfast order, got upset when we were out of the usual cereal.",
+                logged_by="Demo Parent",
+            ),
+            dict(
+                days_ago=2, entry_time="13:10", category="anxiety", setting="public",
+                duration_minutes=15, intensity=3, trigger="crowded store",
+                notes="Asked to leave, felt better once we were back in the car.",
+                logged_by="Demo Parent",
+            ),
+            dict(
+                days_ago=3, entry_time="15:00", category="sensory seeking", setting="home",
+                duration_minutes=30, intensity=1, trigger=None,
+                notes="Long stretch of jumping on the trampoline, very regulated afterward.",
+                logged_by="Demo Babysitter",
+            ),
+            dict(
+                days_ago=4, entry_time="09:20", category="shutdown", setting="school",
+                duration_minutes=25, intensity=4, trigger="fire drill",
+                notes="Went quiet and unresponsive for a while, recovered with a quiet break.",
+                logged_by="Demo Teacher",
+            ),
+            dict(
+                days_ago=5, entry_time="17:40", category="aggression", setting="home",
+                duration_minutes=8, intensity=3, trigger="sibling took a toy",
+                notes="Brief, resolved with a reset in another room.",
+                logged_by="Demo Parent",
+            ),
+        ]
+        for row in seed_rows:
+            entry_date = today - timedelta(days=row["days_ago"])
+            self.entries.append(
+                {
+                    "id": self._next_id(),
+                    "entry_date": entry_date.isoformat(),
+                    "entry_time": row["entry_time"],
+                    "category": row["category"],
+                    "setting": row["setting"],
+                    "duration_minutes": row["duration_minutes"],
+                    "intensity": row["intensity"],
+                    "trigger": row["trigger"],
+                    "notes": row["notes"],
+                    "logged_by": row["logged_by"],
+                }
+            )
+
+    def list_entries(self):
+        with self._lock:
+            return sorted(
+                self.entries,
+                key=lambda e: (e["entry_date"], e["entry_time"] or "", e["id"]),
+                reverse=True,
+            )
+
+    def create_entry(self, entry: "EntryIn"):
+        with self._lock:
+            row = {
+                "id": self._next_id(),
+                "entry_date": entry.entry_date.isoformat(),
+                "entry_time": entry.entry_time.isoformat() if entry.entry_time else None,
+                "category": entry.category,
+                "setting": entry.setting,
+                "duration_minutes": entry.duration_minutes,
+                "intensity": entry.intensity,
+                "trigger": entry.trigger,
+                "notes": entry.notes,
+                "logged_by": entry.logged_by,
+            }
+            self.entries.append(row)
+            return row
+
+    def delete_entry(self, entry_id: int) -> bool:
+        with self._lock:
+            before = len(self.entries)
+            self.entries = [e for e in self.entries if e["id"] != entry_id]
+            return len(self.entries) != before
+
+    def list_categories(self):
+        with self._lock:
+            return sorted(self.categories)
+
+    def create_category(self, name: str):
+        with self._lock:
+            if name not in self.categories:
+                self.categories.append(name)
+
+
+demo_store = DemoStore()
 
 
 @contextmanager
@@ -159,8 +312,15 @@ def health():
     return {"status": "ok", "db_configured": bool(DATABASE_URL)}
 
 
+@app.get("/api/whoami")
+def whoami(request: Request):
+    return {"demo": is_demo(request)}
+
+
 @app.get("/api/entries")
-def list_entries():
+def list_entries(request: Request):
+    if is_demo(request):
+        return demo_store.list_entries()
     with get_conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
@@ -172,7 +332,9 @@ def list_entries():
 
 
 @app.post("/api/entries")
-def create_entry(entry: EntryIn):
+def create_entry(entry: EntryIn, request: Request):
+    if is_demo(request):
+        return demo_store.create_entry(entry)
     with get_conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
@@ -201,7 +363,11 @@ def create_entry(entry: EntryIn):
 
 
 @app.delete("/api/entries/{entry_id}")
-def delete_entry(entry_id: int):
+def delete_entry(entry_id: int, request: Request):
+    if is_demo(request):
+        if not demo_store.delete_entry(entry_id):
+            raise HTTPException(status_code=404, detail="Entry not found")
+        return {"deleted": entry_id}
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM entries WHERE id = %s", (entry_id,))
@@ -213,7 +379,9 @@ def delete_entry(entry_id: int):
 
 
 @app.get("/api/categories")
-def list_categories():
+def list_categories(request: Request):
+    if is_demo(request):
+        return demo_store.list_categories()
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT name FROM categories ORDER BY name")
@@ -222,10 +390,13 @@ def list_categories():
 
 
 @app.post("/api/categories")
-def create_category(category: CategoryIn):
+def create_category(category: CategoryIn, request: Request):
     name = category.name.strip().lower()
     if not name:
         raise HTTPException(status_code=400, detail="Category name cannot be empty")
+    if is_demo(request):
+        demo_store.create_category(name)
+        return {"name": name}
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(

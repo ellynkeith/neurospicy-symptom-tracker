@@ -233,10 +233,23 @@
     min-height: 1em;
   }
   .status.error { color: var(--danger); }
+
+  .demo-banner {
+    background: var(--teal-dim);
+    color: #2c5750;
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 8px 14px;
+    border-radius: 3px;
+    margin-bottom: 20px;
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
+  <div id="demoBanner" class="demo-banner" hidden>
+    You're viewing demo data — nothing you add or delete here is saved to the real log.
+  </div>
   <header>
     <h1><em>Behavior</em> &amp; Symptom Log</h1>
     <div class="logged-by">
@@ -623,7 +636,18 @@ form.addEventListener('submit', async (ev) => {
 });
 
 // ---- init ----
+async function loadWhoami() {
+  try {
+    const res = await fetch(`${API}/whoami`);
+    const data = await res.json();
+    document.getElementById('demoBanner').hidden = !data.demo;
+  } catch (err) {
+    // Non-critical -- if this fails, just leave the banner hidden.
+  }
+}
+
 (async function init() {
+  await loadWhoami();
   await loadCategories();
   await loadEntries();
 })();
