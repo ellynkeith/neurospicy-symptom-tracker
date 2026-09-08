@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Behavior &amp; Symptom Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #faf6ee;
+    --paper-dim: #f2ebdd;
+    --ink: #2c2620;
+    --ink-soft: #6b6155;
+    --teal: #4f8a82;
+    --teal-dim: #cfe2de;
+    --line: #ddd3c0;
+    --danger: #a8574a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    line-height: 1.5;
+  }
+  h1, h2, h3 {
+    font-family: 'Lora', Georgia, serif;
+    font-weight: 600;
+    margin: 0;
+  }
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 28px 20px 80px;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 1.5rem; }
+  header h1 em { font-style: italic; color: var(--teal); }
+  .logged-by {
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .logged-by input {
+    border: none;
+    border-bottom: 1px solid var(--line);
+    background: transparent;
+    font: inherit;
+    color: var(--ink);
+    padding: 2px 4px;
+    width: 110px;
+  }
+  .logged-by input:focus { outline: none; border-bottom-color: var(--teal); }
+
+  section { margin-bottom: 36px; }
+  .section-title {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 12px;
+  }
+
+  form { display: flex; flex-direction: column; gap: 16px; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px; }
+  .field label { font-size: 0.8rem; color: var(--ink-soft); }
+  input, select, textarea {
+    font: inherit;
+    color: var(--ink);
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 8px 10px;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--teal);
+  }
+  textarea { resize: vertical; min-height: 56px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    background: #fff;
+    color: var(--ink);
+    user-select: none;
+  }
+  .chip.selected {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+  }
+  .chip.add-new {
+    border-style: dashed;
+    color: var(--ink-soft);
+  }
+
+  .intensity { display: flex; gap: 6px; }
+  .intensity button {
+    flex: 1;
+    border: 1px solid var(--line);
+    background: #fff;
+    padding: 8px 0;
+    border-radius: 3px;
+    cursor: pointer;
+    font: inherit;
+    color: var(--ink-soft);
+  }
+  .intensity button.selected {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+  }
+
+  .submit-row { display: flex; justify-content: flex-end; }
+  button.primary {
+    background: var(--teal);
+    color: #fff;
+    border: none;
+    padding: 10px 22px;
+    border-radius: 3px;
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  button.primary:hover { background: #437c74; }
+  button.primary:disabled { background: var(--ink-soft); cursor: not-allowed; }
+
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .toolbar select { min-width: 160px; }
+  .link-btn {
+    background: none;
+    border: none;
+    color: var(--teal);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px 0;
+    text-decoration: underline;
+  }
+
+  .day-group { margin-bottom: 28px; }
+  .day-heading {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+  }
+  .entry {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--paper-dim);
+    display: flex;
+    gap: 14px;
+  }
+  .entry:last-child { border-bottom: none; }
+  .entry-time {
+    width: 64px;
+    flex-shrink: 0;
+    color: var(--ink-soft);
+    font-size: 0.85rem;
+    padding-top: 2px;
+  }
+  .entry-body { flex: 1; }
+  .entry-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+  .badge {
+    display: inline-block;
+    background: var(--teal-dim);
+    color: #2c5750;
+    font-size: 0.78rem;
+    padding: 2px 10px;
+    border-radius: 999px;
+  }
+  .intensity-dots { display: inline-flex; gap: 2px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+  .dot.on { background: var(--danger); }
+  .entry-meta { font-size: 0.82rem; color: var(--ink-soft); }
+  .entry-notes { font-size: 0.9rem; margin-top: 4px; }
+  .entry-actions { margin-left: auto; }
+  .delete-btn {
+    background: none;
+    border: none;
+    color: var(--ink-soft);
+    cursor: pointer;
+    font-size: 0.78rem;
+    text-decoration: underline;
+  }
+  .delete-btn:hover { color: var(--danger); }
+
+  .empty {
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    padding: 20px 0;
+    text-align: center;
+  }
+  .status {
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    margin-top: 6px;
+    min-height: 1em;
+  }
+  .status.error { color: var(--danger); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><em>Behavior</em> &amp; Symptom Log</h1>
+    <div class="logged-by">
+      Logging as
+      <input id="loggedByInput" type="text" placeholder="your name">
+    </div>
+  </header>
+
+  <section>
+    <div class="section-title">New entry</div>
+    <form id="entryForm">
+      <div class="row">
+        <div class="field">
+          <label for="entryDate">Date</label>
+          <input type="date" id="entryDate" required>
+        </div>
+        <div class="field">
+          <label for="entryTime">Time</label>
+          <input type="time" id="entryTime">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Category</label>
+        <div class="chips" id="categoryChips"></div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="settingSelect">Setting</label>
+          <select id="settingSelect">
+            <option value="">—</option>
+            <option value="home">Home</option>
+            <option value="school">School</option>
+            <option value="transitions">Transitions</option>
+            <option value="public">Public</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="durationInput">Duration (min)</label>
+          <input type="number" id="durationInput" min="0" step="1" placeholder="e.g. 15">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Intensity</label>
+        <div class="intensity" id="intensityPicker">
+          <button type="button" data-value="1">1</button>
+          <button type="button" data-value="2">2</button>
+          <button type="button" data-value="3">3</button>
+          <button type="button" data-value="4">4</button>
+          <button type="button" data-value="5">5</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="triggerInput">Possible trigger</label>
+        <input type="text" id="triggerInput" placeholder="e.g. loud noise, transition, hunger">
+      </div>
+
+      <div class="field">
+        <label for="notesInput">Notes</label>
+        <textarea id="notesInput" placeholder="What happened, what helped, anything else worth remembering"></textarea>
+      </div>
+
+      <div class="submit-row">
+        <button type="submit" class="primary" id="submitBtn">Log entry</button>
+      </div>
+      <div class="status" id="formStatus"></div>
+    </form>
+  </section>
+
+  <section>
+    <div class="toolbar">
+      <div class="section-title" style="margin-bottom:0;">Entries</div>
+      <div style="display:flex; gap:12px; align-items:center;">
+        <select id="filterSelect">
+          <option value="">All categories</option>
+        </select>
+        <button class="link-btn" id="exportBtn">Export CSV</button>
+      </div>
+    </div>
+    <div id="entriesList"></div>
+  </section>
+</div>
+
+<script>
+const API = '/api';
+let categories = [];
+let entries = [];
+
+function todayStr() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+}
+function nowStr() {
+  const d = new Date();
+  return d.toTimeString().slice(0, 5);
+}
+
+// ---- logged-by name, per-browser ----
+const loggedByInput = document.getElementById('loggedByInput');
+loggedByInput.value = localStorage.getItem('loggedByName') || '';
+loggedByInput.addEventListener('change', () => {
+  localStorage.setItem('loggedByName', loggedByInput.value.trim());
+});
+
+// ---- defaults ----
+document.getElementById('entryDate').value = todayStr();
+document.getElementById('entryTime').value = nowStr();
+
+// ---- category chips ----
+let selectedCategory = null;
+const categoryChips = document.getElementById('categoryChips');
+const filterSelect = document.getElementById('filterSelect');
+
+function renderCategoryChips() {
+  categoryChips.innerHTML = '';
+  categories.forEach(cat => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (cat === selectedCategory ? ' selected' : '');
+    chip.textContent = cat;
+    chip.addEventListener('click', () => {
+      selectedCategory = (selectedCategory === cat) ? null : cat;
+      renderCategoryChips();
+    });
+    categoryChips.appendChild(chip);
+  });
+  const addChip = document.createElement('div');
+  addChip.className = 'chip add-new';
+  addChip.textContent = '+ new';
+  addChip.addEventListener('click', async () => {
+    const name = prompt('New category name:');
+    if (!name || !name.trim()) return;
+    await fetch(`${API}/categories`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() })
+    });
+    await loadCategories();
+    selectedCategory = name.trim().toLowerCase();
+    renderCategoryChips();
+  });
+  categoryChips.appendChild(addChip);
+}
+
+function renderFilterOptions() {
+  const current = filterSelect.value;
+  filterSelect.innerHTML = '<option value="">All categories</option>';
+  categories.forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.textContent = cat;
+    filterSelect.appendChild(opt);
+  });
+  filterSelect.value = current;
+}
+
+async function loadCategories() {
+  const res = await fetch(`${API}/categories`);
+  categories = await res.json();
+  renderCategoryChips();
+  renderFilterOptions();
+}
+
+// ---- intensity picker ----
+let selectedIntensity = null;
+const intensityPicker = document.getElementById('intensityPicker');
+intensityPicker.querySelectorAll('button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const v = parseInt(btn.dataset.value, 10);
+    selectedIntensity = (selectedIntensity === v) ? null : v;
+    intensityPicker.querySelectorAll('button').forEach(b => {
+      b.classList.toggle('selected', parseInt(b.dataset.value, 10) === selectedIntensity);
+    });
+  });
+});
+
+// ---- entries ----
+const entriesList = document.getElementById('entriesList');
+
+function fmtDayHeading(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+}
+function fmtTime(t) {
+  if (!t) return '—';
+  const [h, m] = t.split(':');
+  const hour = parseInt(h, 10);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const h12 = ((hour + 11) % 12) + 1;
+  return `${h12}:${m} ${ampm}`;
+}
+
+function renderEntries() {
+  const filter = filterSelect.value;
+  const filtered = filter ? entries.filter(e => e.category === filter) : entries;
+
+  entriesList.innerHTML = '';
+  if (!filtered.length) {
+    entriesList.innerHTML = '<div class="empty">No entries logged yet.</div>';
+    return;
+  }
+
+  const groups = {};
+  filtered.forEach(e => {
+    const key = e.entry_date;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(e);
+  });
+
+  Object.keys(groups).sort((a, b) => b.localeCompare(a)).forEach(dateStr => {
+    const group = document.createElement('div');
+    group.className = 'day-group';
+    const heading = document.createElement('div');
+    heading.className = 'day-heading';
+    heading.textContent = fmtDayHeading(dateStr);
+    group.appendChild(heading);
+
+    groups[dateStr].forEach(e => {
+      const row = document.createElement('div');
+      row.className = 'entry';
+
+      const time = document.createElement('div');
+      time.className = 'entry-time';
+      time.textContent = fmtTime(e.entry_time);
+      row.appendChild(time);
+
+      const body = document.createElement('div');
+      body.className = 'entry-body';
+
+      const head = document.createElement('div');
+      head.className = 'entry-head';
+
+      const badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = e.category;
+      head.appendChild(badge);
+
+      if (e.intensity) {
+        const dots = document.createElement('span');
+        dots.className = 'intensity-dots';
+        for (let i = 1; i <= 5; i++) {
+          const dot = document.createElement('span');
+          dot.className = 'dot' + (i <= e.intensity ? ' on' : '');
+          dots.appendChild(dot);
+        }
+        head.appendChild(dots);
+      }
+
+      const actions = document.createElement('span');
+      actions.className = 'entry-actions';
+      const delBtn = document.createElement('button');
+      delBtn.className = 'delete-btn';
+      delBtn.textContent = 'delete';
+      delBtn.addEventListener('click', () => deleteEntry(e.id));
+      actions.appendChild(delBtn);
+      head.appendChild(actions);
+
+      body.appendChild(head);
+
+      const metaParts = [];
+      if (e.setting) metaParts.push(e.setting);
+      if (e.duration_minutes) metaParts.push(`${e.duration_minutes} min`);
+      if (e.trigger) metaParts.push(`trigger: ${e.trigger}`);
+      if (e.logged_by) metaParts.push(`logged by ${e.logged_by}`);
+      if (metaParts.length) {
+        const meta = document.createElement('div');
+        meta.className = 'entry-meta';
+        meta.textContent = metaParts.join(' · ');
+        body.appendChild(meta);
+      }
+
+      if (e.notes) {
+        const notes = document.createElement('div');
+        notes.className = 'entry-notes';
+        notes.textContent = e.notes;
+        body.appendChild(notes);
+      }
+
+      row.appendChild(body);
+      group.appendChild(row);
+    });
+
+    entriesList.appendChild(group);
+  });
+}
+
+async function loadEntries() {
+  const res = await fetch(`${API}/entries`);
+  entries = await res.json();
+  renderEntries();
+}
+
+async function deleteEntry(id) {
+  if (!confirm('Delete this entry?')) return;
+  await fetch(`${API}/entries/${id}`, { method: 'DELETE' });
+  await loadEntries();
+}
+
+filterSelect.addEventListener('change', renderEntries);
+
+// ---- export CSV ----
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const filter = filterSelect.value;
+  const rows = filter ? entries.filter(e => e.category === filter) : entries;
+  const headers = ['date', 'time', 'category', 'setting', 'duration_minutes', 'intensity', 'trigger', 'notes', 'logged_by'];
+  const csvRows = [headers.join(',')];
+  rows.forEach(e => {
+    const line = headers.map(h => {
+      const key = h === 'date' ? 'entry_date' : (h === 'time' ? 'entry_time' : h);
+      let val = e[key] == null ? '' : String(e[key]);
+      val = val.replace(/"/g, '""');
+      if (val.includes(',') || val.includes('"') || val.includes('\n')) val = `"${val}"`;
+      return val;
+    });
+    csvRows.push(line.join(','));
+  });
+  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `behavior-log-${todayStr()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ---- form submit ----
+const form = document.getElementById('entryForm');
+const formStatus = document.getElementById('formStatus');
+const submitBtn = document.getElementById('submitBtn');
+
+form.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  formStatus.textContent = '';
+  formStatus.classList.remove('error');
+
+  if (!selectedCategory) {
+    formStatus.textContent = 'Pick a category.';
+    formStatus.classList.add('error');
+    return;
+  }
+
+  const payload = {
+    entry_date: document.getElementById('entryDate').value,
+    entry_time: document.getElementById('entryTime').value || null,
+    category: selectedCategory,
+    setting: document.getElementById('settingSelect').value || null,
+    duration_minutes: document.getElementById('durationInput').value ? parseInt(document.getElementById('durationInput').value, 10) : null,
+    intensity: selectedIntensity,
+    trigger: document.getElementById('triggerInput').value || null,
+    notes: document.getElementById('notesInput').value || null,
+    logged_by: loggedByInput.value.trim() || null,
+  };
+
+  submitBtn.disabled = true;
+  try {
+    const res = await fetch(`${API}/entries`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    // reset the parts of the form that shouldn't carry over
+    selectedCategory = null;
+    selectedIntensity = null;
+    renderCategoryChips();
+    intensityPicker.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+    document.getElementById('durationInput').value = '';
+    document.getElementById('triggerInput').value = '';
+    document.getElementById('notesInput').value = '';
+    document.getElementById('entryTime').value = nowStr();
+
+    await loadEntries();
+    formStatus.textContent = 'Logged.';
+  } catch (err) {
+    formStatus.textContent = 'Could not save — check your connection and try again.';
+    formStatus.classList.add('error');
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+// ---- init ----
+(async function init() {
+  await loadCategories();
+  await loadEntries();
+})();
+</script>
+</body>
+</html>
