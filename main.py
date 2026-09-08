@@ -5,14 +5,14 @@ import os
 import threading
 from contextlib import contextmanager
 from datetime import date, time, timedelta
-from typing import Optional
+from typing import List, Optional
 
 import psycopg2
 import psycopg2.extras
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
@@ -126,49 +126,49 @@ class DemoStore:
         today = date.today()
         seed_rows = [
             dict(
-                days_ago=0, entry_time="16:45", category="meltdown", setting="home",
+                days_ago=0, entry_time="16:45", categories=["meltdown", "aggression"], setting="home",
                 duration_minutes=20, intensity=4, trigger="transition from screen time",
                 notes="Took about 20 min to settle. Dimming the lights helped.",
                 logged_by="Demo Parent",
             ),
             dict(
-                days_ago=0, entry_time="08:15", category="sensory avoidance", setting="school",
+                days_ago=0, entry_time="08:15", categories=["sensory avoidance"], setting="school",
                 duration_minutes=5, intensity=2, trigger="loud cafeteria",
                 notes="Asked for noise-canceling headphones, worked well.",
                 logged_by="Demo Teacher",
             ),
             dict(
-                days_ago=1, entry_time="18:30", category="stimming", setting="home",
+                days_ago=1, entry_time="18:30", categories=["stimming"], setting="home",
                 duration_minutes=None, intensity=1, trigger=None,
                 notes="Hand-flapping during favorite show, seemed happy/regulated.",
                 logged_by="Demo Parent",
             ),
             dict(
-                days_ago=1, entry_time="07:50", category="rigidity", setting="transitions",
+                days_ago=1, entry_time="07:50", categories=["rigidity", "anxiety"], setting="transitions",
                 duration_minutes=10, intensity=3, trigger="unexpected change in morning routine",
                 notes="Wanted the usual breakfast order, got upset when we were out of the usual cereal.",
                 logged_by="Demo Parent",
             ),
             dict(
-                days_ago=2, entry_time="13:10", category="anxiety", setting="public",
+                days_ago=2, entry_time="13:10", categories=["anxiety"], setting="public",
                 duration_minutes=15, intensity=3, trigger="crowded store",
                 notes="Asked to leave, felt better once we were back in the car.",
                 logged_by="Demo Parent",
             ),
             dict(
-                days_ago=3, entry_time="15:00", category="sensory seeking", setting="home",
+                days_ago=3, entry_time="15:00", categories=["sensory seeking"], setting="home",
                 duration_minutes=30, intensity=1, trigger=None,
                 notes="Long stretch of jumping on the trampoline, very regulated afterward.",
                 logged_by="Demo Babysitter",
             ),
             dict(
-                days_ago=4, entry_time="09:20", category="shutdown", setting="school",
+                days_ago=4, entry_time="09:20", categories=["shutdown"], setting="school",
                 duration_minutes=25, intensity=4, trigger="fire drill",
                 notes="Went quiet and unresponsive for a while, recovered with a quiet break.",
                 logged_by="Demo Teacher",
             ),
             dict(
-                days_ago=5, entry_time="17:40", category="aggression", setting="home",
+                days_ago=5, entry_time="17:40", categories=["aggression"], setting="home",
                 duration_minutes=8, intensity=3, trigger="sibling took a toy",
                 notes="Brief, resolved with a reset in another room.",
                 logged_by="Demo Parent",
@@ -181,7 +181,7 @@ class DemoStore:
                     "id": self._next_id(),
                     "entry_date": entry_date.isoformat(),
                     "entry_time": row["entry_time"],
-                    "category": row["category"],
+                    "categories": row["categories"],
                     "setting": row["setting"],
                     "duration_minutes": row["duration_minutes"],
                     "intensity": row["intensity"],
@@ -205,7 +205,7 @@ class DemoStore:
                 "id": self._next_id(),
                 "entry_date": entry.entry_date.isoformat(),
                 "entry_time": entry.entry_time.isoformat() if entry.entry_time else None,
-                "category": entry.category,
+                "categories": entry.categories,
                 "setting": entry.setting,
                 "duration_minutes": entry.duration_minutes,
                 "intensity": entry.intensity,
@@ -267,7 +267,7 @@ def init_db():
                     id SERIAL PRIMARY KEY,
                     entry_date DATE NOT NULL,
                     entry_time TIME,
-                    category TEXT NOT NULL,
+                    categories TEXT[] NOT NULL DEFAULT '{}',
                     setting TEXT,
                     duration_minutes INTEGER,
                     intensity INTEGER,
@@ -284,6 +284,47 @@ def init_db():
                     (cat,),
                 )
         conn.commit()
+    migrate_single_category_column(conn=None)
+
+
+def migrate_single_category_column(conn=None):
+    """Migrate an older deployment's singular `category TEXT` column to the
+    current `categories TEXT[]` column, preserving existing data. Safe to run
+    on every startup: each step is a no-op once the migration has happened.
+    """
+    owns_conn = conn is None
+    if owns_conn:
+        conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'entries' AND column_name = 'category'
+                """
+            )
+            has_old_column = cur.fetchone() is not None
+
+            if has_old_column:
+                cur.execute(
+                    """
+                    ALTER TABLE entries
+                    ADD COLUMN IF NOT EXISTS categories TEXT[] NOT NULL DEFAULT '{}'
+                    """
+                )
+                cur.execute(
+                    """
+                    UPDATE entries
+                    SET categories = ARRAY[category]
+                    WHERE category IS NOT NULL
+                      AND (categories IS NULL OR categories = '{}')
+                    """
+                )
+                cur.execute("ALTER TABLE entries DROP COLUMN category")
+        conn.commit()
+    finally:
+        if owns_conn:
+            conn.close()
 
 
 @app.on_event("startup")
@@ -294,13 +335,28 @@ def on_startup():
 class EntryIn(BaseModel):
     entry_date: date
     entry_time: Optional[time] = None
-    category: str
+    categories: List[str]
     setting: Optional[str] = None
     duration_minutes: Optional[int] = None
     intensity: Optional[int] = None
     trigger: Optional[str] = None
     notes: Optional[str] = None
     logged_by: Optional[str] = None
+
+    @field_validator("categories")
+    @classmethod
+    def categories_not_empty(cls, value: List[str]) -> List[str]:
+        cleaned = [c.strip().lower() for c in value if c and c.strip()]
+        # de-dupe while preserving order
+        seen = set()
+        deduped = []
+        for c in cleaned:
+            if c not in seen:
+                seen.add(c)
+                deduped.append(c)
+        if not deduped:
+            raise ValueError("At least one category is required")
+        return deduped
 
 
 class CategoryIn(BaseModel):
@@ -340,7 +396,7 @@ def create_entry(entry: EntryIn, request: Request):
             cur.execute(
                 """
                 INSERT INTO entries
-                    (entry_date, entry_time, category, setting, duration_minutes,
+                    (entry_date, entry_time, categories, setting, duration_minutes,
                      intensity, trigger, notes, logged_by)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
@@ -348,7 +404,7 @@ def create_entry(entry: EntryIn, request: Request):
                 (
                     entry.entry_date,
                     entry.entry_time,
-                    entry.category,
+                    entry.categories,
                     entry.setting,
                     entry.duration_minutes,
                     entry.intensity,

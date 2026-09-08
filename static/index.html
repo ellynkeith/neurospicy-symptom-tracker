@@ -273,7 +273,7 @@
       </div>
 
       <div class="field">
-        <label>Category</label>
+        <label>Categories (pick one or more)</label>
         <div class="chips" id="categoryChips"></div>
       </div>
 
@@ -362,8 +362,8 @@ loggedByInput.addEventListener('change', () => {
 document.getElementById('entryDate').value = todayStr();
 document.getElementById('entryTime').value = nowStr();
 
-// ---- category chips ----
-let selectedCategory = null;
+// ---- category chips (multi-select) ----
+let selectedCategories = new Set();
 const categoryChips = document.getElementById('categoryChips');
 const filterSelect = document.getElementById('filterSelect');
 
@@ -371,10 +371,14 @@ function renderCategoryChips() {
   categoryChips.innerHTML = '';
   categories.forEach(cat => {
     const chip = document.createElement('div');
-    chip.className = 'chip' + (cat === selectedCategory ? ' selected' : '');
+    chip.className = 'chip' + (selectedCategories.has(cat) ? ' selected' : '');
     chip.textContent = cat;
     chip.addEventListener('click', () => {
-      selectedCategory = (selectedCategory === cat) ? null : cat;
+      if (selectedCategories.has(cat)) {
+        selectedCategories.delete(cat);
+      } else {
+        selectedCategories.add(cat);
+      }
       renderCategoryChips();
     });
     categoryChips.appendChild(chip);
@@ -391,7 +395,7 @@ function renderCategoryChips() {
       body: JSON.stringify({ name: name.trim() })
     });
     await loadCategories();
-    selectedCategory = name.trim().toLowerCase();
+    selectedCategories.add(name.trim().toLowerCase());
     renderCategoryChips();
   });
   categoryChips.appendChild(addChip);
@@ -447,7 +451,7 @@ function fmtTime(t) {
 
 function renderEntries() {
   const filter = filterSelect.value;
-  const filtered = filter ? entries.filter(e => e.category === filter) : entries;
+  const filtered = filter ? entries.filter(e => (e.categories || []).includes(filter)) : entries;
 
   entriesList.innerHTML = '';
   if (!filtered.length) {
@@ -485,10 +489,12 @@ function renderEntries() {
       const head = document.createElement('div');
       head.className = 'entry-head';
 
-      const badge = document.createElement('span');
-      badge.className = 'badge';
-      badge.textContent = e.category;
-      head.appendChild(badge);
+      (e.categories || []).forEach(cat => {
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = cat;
+        head.appendChild(badge);
+      });
 
       if (e.intensity) {
         const dots = document.createElement('span');
@@ -556,13 +562,18 @@ filterSelect.addEventListener('change', renderEntries);
 // ---- export CSV ----
 document.getElementById('exportBtn').addEventListener('click', () => {
   const filter = filterSelect.value;
-  const rows = filter ? entries.filter(e => e.category === filter) : entries;
-  const headers = ['date', 'time', 'category', 'setting', 'duration_minutes', 'intensity', 'trigger', 'notes', 'logged_by'];
+  const rows = filter ? entries.filter(e => (e.categories || []).includes(filter)) : entries;
+  const headers = ['date', 'time', 'categories', 'setting', 'duration_minutes', 'intensity', 'trigger', 'notes', 'logged_by'];
   const csvRows = [headers.join(',')];
   rows.forEach(e => {
     const line = headers.map(h => {
       const key = h === 'date' ? 'entry_date' : (h === 'time' ? 'entry_time' : h);
-      let val = e[key] == null ? '' : String(e[key]);
+      let val;
+      if (h === 'categories') {
+        val = (e.categories || []).join('; ');
+      } else {
+        val = e[key] == null ? '' : String(e[key]);
+      }
       val = val.replace(/"/g, '""');
       if (val.includes(',') || val.includes('"') || val.includes('\n')) val = `"${val}"`;
       return val;
@@ -588,8 +599,8 @@ form.addEventListener('submit', async (ev) => {
   formStatus.textContent = '';
   formStatus.classList.remove('error');
 
-  if (!selectedCategory) {
-    formStatus.textContent = 'Pick a category.';
+  if (selectedCategories.size === 0) {
+    formStatus.textContent = 'Pick at least one category.';
     formStatus.classList.add('error');
     return;
   }
@@ -597,7 +608,7 @@ form.addEventListener('submit', async (ev) => {
   const payload = {
     entry_date: document.getElementById('entryDate').value,
     entry_time: document.getElementById('entryTime').value || null,
-    category: selectedCategory,
+    categories: Array.from(selectedCategories),
     setting: document.getElementById('settingSelect').value || null,
     duration_minutes: document.getElementById('durationInput').value ? parseInt(document.getElementById('durationInput').value, 10) : null,
     intensity: selectedIntensity,
@@ -616,7 +627,7 @@ form.addEventListener('submit', async (ev) => {
     if (!res.ok) throw new Error(await res.text());
 
     // reset the parts of the form that shouldn't carry over
-    selectedCategory = null;
+    selectedCategories = new Set();
     selectedIntensity = null;
     renderCategoryChips();
     intensityPicker.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
