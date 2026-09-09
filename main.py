@@ -132,6 +132,13 @@ DEFAULT_SITUATIONS = [
     "waiting/turn-taking",
 ]
 
+# Exercise type is a small, fixed clinical distinction rather than a growable
+# vocabulary like categories/situations -- cognitively-engaging activity
+# (e.g. martial arts, dance, a sport with strategy) has the strongest
+# evidenced effect on emotion regulation specifically, distinct from simple
+# aerobic activity (e.g. running, biking). Kept as a closed set on purpose.
+ALLOWED_EXERCISE_TYPES = {"cognitively-engaging", "aerobic", "other/mixed"}
+
 
 def is_demo(request: Request) -> bool:
     return getattr(request.state, "demo", False)
@@ -150,6 +157,7 @@ class DemoStore:
         self.categories = list(DEFAULT_CATEGORIES)
         self.situations = list(DEFAULT_SITUATIONS)
         self.entries = []
+        self.daily_logs = {}
         self._seed()
 
     def _next_id(self):
@@ -224,6 +232,25 @@ class DemoStore:
                 }
             )
 
+        seed_daily = [
+            dict(days_ago=0, bedtime="21:00", wake_time="07:00", night_awakenings=1,
+                 exercise_minutes=30, exercise_type="aerobic"),
+            dict(days_ago=1, bedtime="21:30", wake_time="06:45", night_awakenings=0,
+                 exercise_minutes=20, exercise_type="cognitively-engaging"),
+            dict(days_ago=3, bedtime="22:15", wake_time="07:15", night_awakenings=2,
+                 exercise_minutes=None, exercise_type=None),
+        ]
+        for row in seed_daily:
+            entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
+            self.daily_logs[entry_date] = {
+                "entry_date": entry_date,
+                "bedtime": row["bedtime"],
+                "wake_time": row["wake_time"],
+                "night_awakenings": row["night_awakenings"],
+                "exercise_minutes": row["exercise_minutes"],
+                "exercise_type": row["exercise_type"],
+            }
+
     def list_entries(self):
         with self._lock:
             return sorted(
@@ -273,6 +300,23 @@ class DemoStore:
             if name not in self.situations:
                 self.situations.append(name)
 
+    def list_daily_logs(self):
+        with self._lock:
+            return sorted(self.daily_logs.values(), key=lambda r: r["entry_date"], reverse=True)
+
+    def upsert_daily_log(self, log: "DailyLogIn"):
+        with self._lock:
+            row = {
+                "entry_date": log.entry_date.isoformat(),
+                "bedtime": log.bedtime.isoformat() if log.bedtime else None,
+                "wake_time": log.wake_time.isoformat() if log.wake_time else None,
+                "night_awakenings": log.night_awakenings,
+                "exercise_minutes": log.exercise_minutes,
+                "exercise_type": log.exercise_type,
+            }
+            self.daily_logs[row["entry_date"]] = row
+            return row
+
 
 demo_store = DemoStore()
 
@@ -308,6 +352,18 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS situations (
                     id SERIAL PRIMARY KEY,
                     name TEXT UNIQUE NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS daily_logs (
+                    entry_date DATE PRIMARY KEY,
+                    bedtime TIME,
+                    wake_time TIME,
+                    night_awakenings INTEGER,
+                    exercise_minutes INTEGER,
+                    exercise_type TEXT
                 )
                 """
             )
@@ -512,6 +568,36 @@ class SituationIn(BaseModel):
     name: str
 
 
+class DailyLogIn(BaseModel):
+    """Sleep + exercise context for a single day, independent of how many
+    behavior entries exist for that date. Everything but entry_date is
+    optional -- there's no obligation to fill in sleep on a day you only
+    logged exercise, or vice versa."""
+    entry_date: date
+    bedtime: Optional[time] = None
+    wake_time: Optional[time] = None
+    night_awakenings: Optional[int] = None
+    exercise_minutes: Optional[int] = None
+    exercise_type: Optional[str] = None
+
+    @field_validator("night_awakenings", "exercise_minutes")
+    @classmethod
+    def non_negative(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value < 0:
+            raise ValueError("must be zero or greater")
+        return value
+
+    @field_validator("exercise_type")
+    @classmethod
+    def valid_exercise_type(cls, value: Optional[str]) -> Optional[str]:
+        if value is None or not value.strip():
+            return None
+        cleaned = value.strip().lower()
+        if cleaned not in ALLOWED_EXERCISE_TYPES:
+            raise ValueError(f"exercise_type must be one of {sorted(ALLOWED_EXERCISE_TYPES)}")
+        return cleaned
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "db_configured": bool(DATABASE_URL)}
@@ -639,6 +725,51 @@ def create_situation(situation: SituationIn, request: Request):
             )
         conn.commit()
     return {"name": name}
+
+
+@app.get("/api/daily")
+def list_daily_logs(request: Request):
+    if is_demo(request):
+        return demo_store.list_daily_logs()
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM daily_logs ORDER BY entry_date DESC")
+            rows = cur.fetchall()
+    return rows
+
+
+@app.post("/api/daily")
+def upsert_daily_log(log: DailyLogIn, request: Request):
+    if is_demo(request):
+        return demo_store.upsert_daily_log(log)
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO daily_logs
+                    (entry_date, bedtime, wake_time, night_awakenings,
+                     exercise_minutes, exercise_type)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (entry_date) DO UPDATE SET
+                    bedtime = EXCLUDED.bedtime,
+                    wake_time = EXCLUDED.wake_time,
+                    night_awakenings = EXCLUDED.night_awakenings,
+                    exercise_minutes = EXCLUDED.exercise_minutes,
+                    exercise_type = EXCLUDED.exercise_type
+                RETURNING *
+                """,
+                (
+                    log.entry_date,
+                    log.bedtime,
+                    log.wake_time,
+                    log.night_awakenings,
+                    log.exercise_minutes,
+                    log.exercise_type,
+                ),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    return row
 
 
 # Serve the frontend last so it doesn't shadow the /api routes above.

@@ -248,6 +248,33 @@
     border-radius: 3px;
     margin-bottom: 20px;
   }
+
+  details.daily-details {
+    margin-bottom: 36px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 12px 16px;
+  }
+  details.daily-details summary {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  details.daily-details form { margin-top: 16px; }
+
+  .daily-summary {
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    margin: -2px 0 10px;
+  }
+  .day-empty {
+    color: var(--ink-soft);
+    font-size: 0.85rem;
+    font-style: italic;
+    padding: 4px 0 12px;
+  }
 </style>
 </head>
 <body>
@@ -328,6 +355,51 @@
     </form>
   </section>
 
+  <details class="daily-details">
+    <summary>Daily context (sleep &amp; exercise, optional)</summary>
+    <form id="dailyForm">
+      <div class="row">
+        <div class="field">
+          <label for="dailyDate">Date</label>
+          <input type="date" id="dailyDate">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="bedtimeInput">Bedtime</label>
+          <input type="time" id="bedtimeInput">
+        </div>
+        <div class="field">
+          <label for="wakeTimeInput">Wake time</label>
+          <input type="time" id="wakeTimeInput">
+        </div>
+        <div class="field">
+          <label for="nightAwakeningsInput">Night awakenings</label>
+          <input type="number" id="nightAwakeningsInput" min="0" step="1" placeholder="e.g. 1">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="exerciseMinutesInput">Exercise (min)</label>
+          <input type="number" id="exerciseMinutesInput" min="0" step="1" placeholder="e.g. 30">
+        </div>
+        <div class="field">
+          <label for="exerciseTypeSelect">Exercise type</label>
+          <select id="exerciseTypeSelect">
+            <option value="">—</option>
+            <option value="cognitively-engaging">Cognitively engaging (martial arts, dance, strategy sport)</option>
+            <option value="aerobic">Aerobic (running, biking, swimming)</option>
+            <option value="other/mixed">Other / mixed</option>
+          </select>
+        </div>
+      </div>
+      <div class="submit-row">
+        <button type="submit" class="primary" id="dailySubmitBtn">Save daily context</button>
+      </div>
+      <div class="status" id="dailyStatus"></div>
+    </form>
+  </details>
+
   <section>
     <div class="toolbar">
       <div class="section-title" style="margin-bottom:0;">Entries</div>
@@ -347,6 +419,8 @@ const API = '/api';
 let categories = [];
 let situations = [];
 let entries = [];
+let dailyLogs = [];
+let dailyLogMap = {};
 
 function todayStr() {
   const d = new Date();
@@ -470,6 +544,60 @@ async function loadSituations() {
   renderSituationChips();
 }
 
+// ---- daily context (sleep + exercise, one row per date, independent of
+// how many behavior entries exist that day) ----
+const dailyDateInput = document.getElementById('dailyDate');
+const bedtimeInput = document.getElementById('bedtimeInput');
+const wakeTimeInput = document.getElementById('wakeTimeInput');
+const nightAwakeningsInput = document.getElementById('nightAwakeningsInput');
+const exerciseMinutesInput = document.getElementById('exerciseMinutesInput');
+const exerciseTypeSelect = document.getElementById('exerciseTypeSelect');
+
+function hasDailyContent(log) {
+  return !!log && (
+    log.bedtime != null || log.wake_time != null || log.night_awakenings != null ||
+    log.exercise_minutes != null || !!log.exercise_type
+  );
+}
+
+function fmtDailySummary(log) {
+  const parts = [];
+  if (log.bedtime || log.wake_time || log.night_awakenings != null) {
+    let sleepPart = (log.bedtime || log.wake_time)
+      ? `Sleep ${log.bedtime ? fmtTime(log.bedtime) : '?'}–${log.wake_time ? fmtTime(log.wake_time) : '?'}`
+      : 'Sleep';
+    if (log.night_awakenings != null) {
+      sleepPart += ` · ${log.night_awakenings} waking${log.night_awakenings === 1 ? '' : 's'}`;
+    }
+    parts.push(sleepPart);
+  }
+  if (log.exercise_minutes != null || log.exercise_type) {
+    let exPart = 'Exercise';
+    if (log.exercise_minutes != null) exPart += ` ${log.exercise_minutes} min`;
+    if (log.exercise_type) exPart += ` (${log.exercise_type})`;
+    parts.push(exPart);
+  }
+  return parts.join('   ·   ');
+}
+
+function populateDailyFormForDate(dateStr) {
+  const log = dailyLogMap[dateStr];
+  bedtimeInput.value = log && log.bedtime ? log.bedtime.slice(0, 5) : '';
+  wakeTimeInput.value = log && log.wake_time ? log.wake_time.slice(0, 5) : '';
+  nightAwakeningsInput.value = (log && log.night_awakenings != null) ? log.night_awakenings : '';
+  exerciseMinutesInput.value = (log && log.exercise_minutes != null) ? log.exercise_minutes : '';
+  exerciseTypeSelect.value = (log && log.exercise_type) ? log.exercise_type : '';
+}
+
+dailyDateInput.addEventListener('change', () => populateDailyFormForDate(dailyDateInput.value));
+
+async function loadDailyLogs() {
+  const res = await fetch(`${API}/daily`);
+  dailyLogs = await res.json();
+  dailyLogMap = {};
+  dailyLogs.forEach(l => { dailyLogMap[l.entry_date] = l; });
+}
+
 // ---- intensity picker ----
 let selectedIntensity = null;
 const intensityPicker = document.getElementById('intensityPicker');
@@ -503,12 +631,6 @@ function renderEntries() {
   const filter = filterSelect.value;
   const filtered = filter ? entries.filter(e => (e.categories || []).includes(filter)) : entries;
 
-  entriesList.innerHTML = '';
-  if (!filtered.length) {
-    entriesList.innerHTML = '<div class="empty">No entries logged yet.</div>';
-    return;
-  }
-
   const groups = {};
   filtered.forEach(e => {
     const key = e.entry_date;
@@ -516,13 +638,45 @@ function renderEntries() {
     groups[key].push(e);
   });
 
-  Object.keys(groups).sort((a, b) => b.localeCompare(a)).forEach(dateStr => {
+  // With no category filter active, also surface days that only have daily
+  // context (sleep/exercise) logged and zero behavior entries -- a quiet
+  // day is itself useful signal for spotting patterns. Skip this when a
+  // filter is active since the point of filtering is to narrow to entries.
+  if (!filter) {
+    dailyLogs.forEach(log => {
+      if (!groups[log.entry_date]) groups[log.entry_date] = [];
+    });
+  }
+
+  entriesList.innerHTML = '';
+  const dateKeys = Object.keys(groups);
+  if (!dateKeys.length) {
+    entriesList.innerHTML = '<div class="empty">No entries logged yet.</div>';
+    return;
+  }
+
+  dateKeys.sort((a, b) => b.localeCompare(a)).forEach(dateStr => {
     const group = document.createElement('div');
     group.className = 'day-group';
     const heading = document.createElement('div');
     heading.className = 'day-heading';
     heading.textContent = fmtDayHeading(dateStr);
     group.appendChild(heading);
+
+    const dailyLog = dailyLogMap[dateStr];
+    if (hasDailyContent(dailyLog)) {
+      const summary = document.createElement('div');
+      summary.className = 'daily-summary';
+      summary.textContent = fmtDailySummary(dailyLog);
+      group.appendChild(summary);
+    }
+
+    if (!groups[dateStr].length) {
+      const dayEmpty = document.createElement('div');
+      dayEmpty.className = 'day-empty';
+      dayEmpty.textContent = 'No behavior entries logged.';
+      group.appendChild(dayEmpty);
+    }
 
     groups[dateStr].forEach(e => {
       const row = document.createElement('div');
@@ -705,6 +859,44 @@ form.addEventListener('submit', async (ev) => {
   }
 });
 
+// ---- daily context form submit ----
+const dailyForm = document.getElementById('dailyForm');
+const dailyStatus = document.getElementById('dailyStatus');
+const dailySubmitBtn = document.getElementById('dailySubmitBtn');
+
+dailyForm.addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  dailyStatus.textContent = '';
+  dailyStatus.classList.remove('error');
+
+  const payload = {
+    entry_date: dailyDateInput.value,
+    bedtime: bedtimeInput.value || null,
+    wake_time: wakeTimeInput.value || null,
+    night_awakenings: nightAwakeningsInput.value ? parseInt(nightAwakeningsInput.value, 10) : null,
+    exercise_minutes: exerciseMinutesInput.value ? parseInt(exerciseMinutesInput.value, 10) : null,
+    exercise_type: exerciseTypeSelect.value || null,
+  };
+
+  dailySubmitBtn.disabled = true;
+  try {
+    const res = await fetch(`${API}/daily`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    await loadDailyLogs();
+    renderEntries();
+    dailyStatus.textContent = 'Saved.';
+  } catch (err) {
+    dailyStatus.textContent = 'Could not save — check your connection and try again.';
+    dailyStatus.classList.add('error');
+  } finally {
+    dailySubmitBtn.disabled = false;
+  }
+});
+
 // ---- init ----
 async function loadWhoami() {
   try {
@@ -717,9 +909,12 @@ async function loadWhoami() {
 }
 
 (async function init() {
+  dailyDateInput.value = todayStr();
   await loadWhoami();
   await loadCategories();
   await loadSituations();
+  await loadDailyLogs();
+  populateDailyFormForDate(dailyDateInput.value);
   await loadEntries();
 })();
 </script>
