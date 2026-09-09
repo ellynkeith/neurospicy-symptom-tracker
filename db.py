@@ -81,6 +81,21 @@ def init_db():
                 )
                 """
             )
+            # Brand new table -- unlike daily_logs there's nothing here to
+            # migrate from, so CREATE TABLE IF NOT EXISTS alone covers both
+            # a fresh install and an existing deployment.
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS wetting_incidents (
+                    id SERIAL PRIMARY KEY,
+                    entry_date DATE NOT NULL,
+                    incident_time TIME,
+                    setting TEXT,
+                    response TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                )
+                """
+            )
             for cat in DEFAULT_CATEGORIES:
                 cur.execute(
                     "INSERT INTO categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",

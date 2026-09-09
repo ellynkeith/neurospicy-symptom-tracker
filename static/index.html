@@ -209,6 +209,11 @@
     border: 1px solid var(--teal);
     color: var(--teal);
   }
+  .badge.response-noncompliant {
+    background: transparent;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+  }
   .intensity-dots { display: inline-flex; gap: 2px; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
   .dot.on { background: var(--danger); }
@@ -275,6 +280,36 @@
     font-style: italic;
     padding: 4px 0 12px;
   }
+
+  .wetting-section {
+    border-top: 1px solid var(--line);
+    margin-top: 4px;
+    padding-top: 16px;
+  }
+  .wetting-section-label {
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+    margin-bottom: 8px;
+  }
+  .wetting-list { margin-bottom: 12px; }
+  .wetting-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--paper-dim);
+  }
+  .wetting-item:last-child { border-bottom: none; }
+  .wetting-item .entry-time { width: 64px; flex-shrink: 0; color: var(--ink-soft); font-size: 0.85rem; }
+  .wetting-item .wetting-setting { color: var(--ink-soft); flex: 1; }
+  .wetting-empty {
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+    font-style: italic;
+    padding: 4px 0 12px;
+  }
+  .wetting-add-row { align-items: flex-end; }
 </style>
 </head>
 <body>
@@ -356,7 +391,7 @@
   </section>
 
   <details class="daily-details">
-    <summary>Daily context (sleep &amp; exercise, optional)</summary>
+    <summary>Daily context (sleep, exercise &amp; wetting incidents, optional)</summary>
     <form id="dailyForm">
       <div class="row">
         <div class="field">
@@ -402,6 +437,41 @@
       </div>
       <div class="status" id="dailyStatus"></div>
     </form>
+
+    <div class="wetting-section">
+      <div class="wetting-section-label">Wetting incidents for this date</div>
+      <div class="wetting-list" id="wettingList"></div>
+      <div class="row wetting-add-row">
+        <div class="field">
+          <label for="wettingTimeInput">Time</label>
+          <input type="time" id="wettingTimeInput">
+        </div>
+        <div class="field">
+          <label for="wettingSettingSelect">Where</label>
+          <select id="wettingSettingSelect">
+            <option value="">—</option>
+            <option value="home">Home</option>
+            <option value="school">School</option>
+            <option value="transitions">Transitions</option>
+            <option value="public">Public</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="wettingResponseSelect">Response</label>
+          <select id="wettingResponseSelect">
+            <option value="">—</option>
+            <option value="compliant">Compliant</option>
+            <option value="noncompliant">Noncompliant</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <button type="button" class="primary" id="addWettingBtn">Add incident</button>
+        </div>
+      </div>
+      <div class="status" id="wettingStatus"></div>
+    </div>
   </details>
 
   <section>
@@ -425,6 +495,8 @@ let situations = [];
 let entries = [];
 let dailyLogs = [];
 let dailyLogMap = {};
+let wettingIncidents = [];
+let wettingByDate = {};
 
 function todayStr() {
   const d = new Date();
@@ -598,7 +670,10 @@ function populateDailyFormForDate(dateStr) {
   exerciseTypeSelect.value = (log && log.exercise_type) ? log.exercise_type : '';
 }
 
-dailyDateInput.addEventListener('change', () => populateDailyFormForDate(dailyDateInput.value));
+dailyDateInput.addEventListener('change', () => {
+  populateDailyFormForDate(dailyDateInput.value);
+  renderWettingListForDate(dailyDateInput.value);
+});
 
 async function loadDailyLogs() {
   const res = await fetch(`${API}/daily`);
@@ -606,6 +681,115 @@ async function loadDailyLogs() {
   dailyLogMap = {};
   dailyLogs.forEach(l => { dailyLogMap[l.entry_date] = l; });
 }
+
+// ---- wetting incidents (any number per date, unlike the single-value
+// sleep/exercise fields above -- each incident is its own row) ----
+const wettingTimeInput = document.getElementById('wettingTimeInput');
+const wettingSettingSelect = document.getElementById('wettingSettingSelect');
+const wettingResponseSelect = document.getElementById('wettingResponseSelect');
+const wettingList = document.getElementById('wettingList');
+const wettingStatus = document.getElementById('wettingStatus');
+const addWettingBtn = document.getElementById('addWettingBtn');
+
+function fmtResponse(response) {
+  return response === 'noncompliant' ? 'noncompliant' : response;
+}
+
+function renderWettingListForDate(dateStr) {
+  const incidents = (wettingByDate[dateStr] || []);
+  wettingList.innerHTML = '';
+  if (!incidents.length) {
+    wettingList.innerHTML = '<div class="wetting-empty">No wetting incidents logged for this date.</div>';
+    return;
+  }
+  incidents.forEach(w => {
+    const item = document.createElement('div');
+    item.className = 'wetting-item';
+
+    const time = document.createElement('div');
+    time.className = 'entry-time';
+    time.textContent = fmtTime(w.incident_time);
+    item.appendChild(time);
+
+    const respBadge = document.createElement('span');
+    respBadge.className = 'badge' + (w.response === 'noncompliant' ? ' response-noncompliant' : '');
+    respBadge.textContent = fmtResponse(w.response);
+    item.appendChild(respBadge);
+
+    const setting = document.createElement('div');
+    setting.className = 'wetting-setting';
+    setting.textContent = w.setting || '';
+    item.appendChild(setting);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'delete-btn';
+    delBtn.textContent = 'delete';
+    delBtn.addEventListener('click', () => deleteWettingIncident(w.id));
+    item.appendChild(delBtn);
+
+    wettingList.appendChild(item);
+  });
+}
+
+async function loadWettingIncidents() {
+  const res = await fetch(`${API}/wetting`);
+  wettingIncidents = await res.json();
+  wettingByDate = {};
+  wettingIncidents.forEach(w => {
+    if (!wettingByDate[w.entry_date]) wettingByDate[w.entry_date] = [];
+    wettingByDate[w.entry_date].push(w);
+  });
+}
+
+async function deleteWettingIncident(id) {
+  if (!confirm('Delete this incident?')) return;
+  await fetch(`${API}/wetting/${id}`, { method: 'DELETE' });
+  await loadWettingIncidents();
+  renderWettingListForDate(dailyDateInput.value);
+  renderEntries();
+}
+
+addWettingBtn.addEventListener('click', async () => {
+  wettingStatus.textContent = '';
+  wettingStatus.classList.remove('error');
+
+  if (!wettingResponseSelect.value) {
+    wettingStatus.textContent = 'Pick a response.';
+    wettingStatus.classList.add('error');
+    return;
+  }
+
+  const payload = {
+    entry_date: dailyDateInput.value,
+    incident_time: wettingTimeInput.value || null,
+    setting: wettingSettingSelect.value || null,
+    response: wettingResponseSelect.value,
+  };
+
+  addWettingBtn.disabled = true;
+  try {
+    const res = await fetch(`${API}/wetting`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    wettingTimeInput.value = '';
+    wettingSettingSelect.value = '';
+    wettingResponseSelect.value = '';
+
+    await loadWettingIncidents();
+    renderWettingListForDate(dailyDateInput.value);
+    renderEntries();
+    wettingStatus.textContent = 'Added.';
+  } catch (err) {
+    wettingStatus.textContent = 'Could not save — check your connection and try again.';
+    wettingStatus.classList.add('error');
+  } finally {
+    addWettingBtn.disabled = false;
+  }
+});
 
 // ---- intensity picker ----
 let selectedIntensity = null;
@@ -655,6 +839,9 @@ function renderEntries() {
     dailyLogs.forEach(log => {
       if (!groups[log.entry_date]) groups[log.entry_date] = [];
     });
+    Object.keys(wettingByDate).forEach(dateStr => {
+      if (!groups[dateStr]) groups[dateStr] = [];
+    });
   }
 
   entriesList.innerHTML = '';
@@ -679,6 +866,52 @@ function renderEntries() {
       summary.textContent = fmtDailySummary(dailyLog);
       group.appendChild(summary);
     }
+
+    (wettingByDate[dateStr] || []).forEach(w => {
+      const wRow = document.createElement('div');
+      wRow.className = 'entry';
+
+      const wTime = document.createElement('div');
+      wTime.className = 'entry-time';
+      wTime.textContent = fmtTime(w.incident_time);
+      wRow.appendChild(wTime);
+
+      const wBody = document.createElement('div');
+      wBody.className = 'entry-body';
+      const wHead = document.createElement('div');
+      wHead.className = 'entry-head';
+
+      const label = document.createElement('span');
+      label.className = 'badge';
+      label.textContent = 'Wetting incident';
+      wHead.appendChild(label);
+
+      const respBadge = document.createElement('span');
+      respBadge.className = 'badge' + (w.response === 'noncompliant' ? ' response-noncompliant' : '');
+      respBadge.textContent = fmtResponse(w.response);
+      wHead.appendChild(respBadge);
+
+      const wActions = document.createElement('span');
+      wActions.className = 'entry-actions';
+      const wDelBtn = document.createElement('button');
+      wDelBtn.className = 'delete-btn';
+      wDelBtn.textContent = 'delete';
+      wDelBtn.addEventListener('click', () => deleteWettingIncident(w.id));
+      wActions.appendChild(wDelBtn);
+      wHead.appendChild(wActions);
+
+      wBody.appendChild(wHead);
+
+      if (w.setting) {
+        const wMeta = document.createElement('div');
+        wMeta.className = 'entry-meta';
+        wMeta.textContent = w.setting;
+        wBody.appendChild(wMeta);
+      }
+
+      wRow.appendChild(wBody);
+      group.appendChild(wRow);
+    });
 
     if (!groups[dateStr].length) {
       const dayEmpty = document.createElement('div');
@@ -925,6 +1158,8 @@ async function loadWhoami() {
   await loadSituations();
   await loadDailyLogs();
   populateDailyFormForDate(dailyDateInput.value);
+  await loadWettingIncidents();
+  renderWettingListForDate(dailyDateInput.value);
   await loadEntries();
 })();
 </script>

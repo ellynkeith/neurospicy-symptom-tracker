@@ -133,3 +133,31 @@ class DailyLogIn(BaseModel):
         if cleaned not in ALLOWED_EXERCISE_TYPES:
             raise ValueError(f"exercise_type must be one of {sorted(ALLOWED_EXERCISE_TYPES)}")
         return cleaned
+
+
+# How she responded to a wetting incident is a small, fixed clinical
+# distinction, like exercise_type, rather than a growable vocabulary --
+# keeping it to a closed set is what makes a compliant-vs-noncompliant
+# pattern easy to spot over time.
+ALLOWED_WETTING_RESPONSES = {"compliant", "noncompliant", "other"}
+
+
+class WettingIncidentIn(BaseModel):
+    """A single wetting incident. Unlike sleep/exercise (one value per day),
+    there can be any number of these on a given day, so each incident is its
+    own row rather than a field on DailyLogIn."""
+    entry_date: date
+    incident_time: Optional[time] = None
+    # Reuses the same setting vocabulary as EntryIn.setting (home/school/
+    # transitions/public/other) for consistency, on the same freeform
+    # convention -- not enforced here either.
+    setting: Optional[str] = None
+    response: str
+
+    @field_validator("response")
+    @classmethod
+    def valid_response(cls, value: str) -> str:
+        cleaned = (value or "").strip().lower()
+        if cleaned not in ALLOWED_WETTING_RESPONSES:
+            raise ValueError(f"response must be one of {sorted(ALLOWED_WETTING_RESPONSES)}")
+        return cleaned

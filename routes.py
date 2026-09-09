@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 from auth import is_demo
 from db import DATABASE_URL, get_conn
 from demo_store import demo_store
-from models import CategoryIn, DailyLogIn, EntryIn, SituationIn
+from models import CategoryIn, DailyLogIn, EntryIn, SituationIn, WettingIncidentIn
 
 router = APIRouter()
 
@@ -183,3 +183,58 @@ def upsert_daily_log(log: DailyLogIn, request: Request):
             row = cur.fetchone()
         conn.commit()
     return row
+
+
+@router.get("/api/wetting")
+def list_wetting_incidents(request: Request):
+    if is_demo(request):
+        return demo_store.list_wetting_incidents()
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM wetting_incidents "
+                "ORDER BY entry_date DESC, incident_time DESC NULLS LAST, id DESC"
+            )
+            rows = cur.fetchall()
+    return rows
+
+
+@router.post("/api/wetting")
+def create_wetting_incident(incident: WettingIncidentIn, request: Request):
+    if is_demo(request):
+        return demo_store.create_wetting_incident(incident)
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO wetting_incidents
+                    (entry_date, incident_time, setting, response)
+                VALUES (%s, %s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    incident.entry_date,
+                    incident.incident_time,
+                    incident.setting,
+                    incident.response,
+                ),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    return row
+
+
+@router.delete("/api/wetting/{incident_id}")
+def delete_wetting_incident(incident_id: int, request: Request):
+    if is_demo(request):
+        if not demo_store.delete_wetting_incident(incident_id):
+            raise HTTPException(status_code=404, detail="Incident not found")
+        return {"deleted": incident_id}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM wetting_incidents WHERE id = %s", (incident_id,))
+            deleted = cur.rowcount
+        conn.commit()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return {"deleted": incident_id}

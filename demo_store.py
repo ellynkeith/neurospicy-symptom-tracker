@@ -2,7 +2,13 @@ import itertools
 import threading
 from datetime import date, timedelta
 
-from models import DEFAULT_CATEGORIES, DEFAULT_SITUATIONS, DailyLogIn, EntryIn
+from models import (
+    DEFAULT_CATEGORIES,
+    DEFAULT_SITUATIONS,
+    DailyLogIn,
+    EntryIn,
+    WettingIncidentIn,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -19,6 +25,7 @@ class DemoStore:
         self.situations = list(DEFAULT_SITUATIONS)
         self.entries = []
         self.daily_logs = {}
+        self.wetting_incidents = []
         self._seed()
 
     def _next_id(self):
@@ -113,6 +120,22 @@ class DemoStore:
                 "exercise_type": row["exercise_type"],
             }
 
+        seed_wetting = [
+            dict(days_ago=0, incident_time="14:15", setting="school", response="noncompliant"),
+            dict(days_ago=2, incident_time="10:00", setting="home", response="compliant"),
+        ]
+        for row in seed_wetting:
+            entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
+            self.wetting_incidents.append(
+                {
+                    "id": self._next_id(),
+                    "entry_date": entry_date,
+                    "incident_time": row["incident_time"],
+                    "setting": row["setting"],
+                    "response": row["response"],
+                }
+            )
+
     def list_entries(self):
         with self._lock:
             return sorted(
@@ -179,6 +202,32 @@ class DemoStore:
             }
             self.daily_logs[row["entry_date"]] = row
             return row
+
+    def list_wetting_incidents(self):
+        with self._lock:
+            return sorted(
+                self.wetting_incidents,
+                key=lambda w: (w["entry_date"], w["incident_time"] or "", w["id"]),
+                reverse=True,
+            )
+
+    def create_wetting_incident(self, incident: WettingIncidentIn):
+        with self._lock:
+            row = {
+                "id": self._next_id(),
+                "entry_date": incident.entry_date.isoformat(),
+                "incident_time": incident.incident_time.isoformat() if incident.incident_time else None,
+                "setting": incident.setting,
+                "response": incident.response,
+            }
+            self.wetting_incidents.append(row)
+            return row
+
+    def delete_wetting_incident(self, incident_id: int) -> bool:
+        with self._lock:
+            before = len(self.wetting_incidents)
+            self.wetting_incidents = [w for w in self.wetting_incidents if w["id"] != incident_id]
+            return len(self.wetting_incidents) != before
 
 
 demo_store = DemoStore()
