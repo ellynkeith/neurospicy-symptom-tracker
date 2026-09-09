@@ -204,6 +204,11 @@
     padding: 2px 10px;
     border-radius: 999px;
   }
+  .badge.situation {
+    background: transparent;
+    border: 1px solid var(--teal);
+    color: var(--teal);
+  }
   .intensity-dots { display: inline-flex; gap: 2px; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
   .dot.on { background: var(--danger); }
@@ -307,8 +312,8 @@
       </div>
 
       <div class="field">
-        <label for="triggerInput">Possible trigger</label>
-        <input type="text" id="triggerInput" placeholder="e.g. loud noise, transition, hunger">
+        <label>Situation / demand (optional)</label>
+        <div class="chips" id="situationChips"></div>
       </div>
 
       <div class="field">
@@ -340,6 +345,7 @@
 <script>
 const API = '/api';
 let categories = [];
+let situations = [];
 let entries = [];
 
 function todayStr() {
@@ -420,6 +426,50 @@ async function loadCategories() {
   renderFilterOptions();
 }
 
+// ---- situation/demand chips (multi-select, optional) ----
+let selectedSituations = new Set();
+const situationChips = document.getElementById('situationChips');
+
+function renderSituationChips() {
+  situationChips.innerHTML = '';
+  situations.forEach(sit => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (selectedSituations.has(sit) ? ' selected' : '');
+    chip.textContent = sit;
+    chip.addEventListener('click', () => {
+      if (selectedSituations.has(sit)) {
+        selectedSituations.delete(sit);
+      } else {
+        selectedSituations.add(sit);
+      }
+      renderSituationChips();
+    });
+    situationChips.appendChild(chip);
+  });
+  const addChip = document.createElement('div');
+  addChip.className = 'chip add-new';
+  addChip.textContent = '+ new';
+  addChip.addEventListener('click', async () => {
+    const name = prompt('New situation/demand name:');
+    if (!name || !name.trim()) return;
+    await fetch(`${API}/situations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() })
+    });
+    await loadSituations();
+    selectedSituations.add(name.trim().toLowerCase());
+    renderSituationChips();
+  });
+  situationChips.appendChild(addChip);
+}
+
+async function loadSituations() {
+  const res = await fetch(`${API}/situations`);
+  situations = await res.json();
+  renderSituationChips();
+}
+
 // ---- intensity picker ----
 let selectedIntensity = null;
 const intensityPicker = document.getElementById('intensityPicker');
@@ -496,6 +546,13 @@ function renderEntries() {
         head.appendChild(badge);
       });
 
+      (e.situations || []).forEach(sit => {
+        const badge = document.createElement('span');
+        badge.className = 'badge situation';
+        badge.textContent = sit;
+        head.appendChild(badge);
+      });
+
       if (e.intensity) {
         const dots = document.createElement('span');
         dots.className = 'intensity-dots';
@@ -521,7 +578,6 @@ function renderEntries() {
       const metaParts = [];
       if (e.setting) metaParts.push(e.setting);
       if (e.duration_minutes) metaParts.push(`${e.duration_minutes} min`);
-      if (e.trigger) metaParts.push(`trigger: ${e.trigger}`);
       if (e.logged_by) metaParts.push(`logged by ${e.logged_by}`);
       if (metaParts.length) {
         const meta = document.createElement('div');
@@ -563,7 +619,7 @@ filterSelect.addEventListener('change', renderEntries);
 document.getElementById('exportBtn').addEventListener('click', () => {
   const filter = filterSelect.value;
   const rows = filter ? entries.filter(e => (e.categories || []).includes(filter)) : entries;
-  const headers = ['date', 'time', 'categories', 'setting', 'duration_minutes', 'intensity', 'trigger', 'notes', 'logged_by'];
+  const headers = ['date', 'time', 'categories', 'setting', 'duration_minutes', 'intensity', 'situations', 'notes', 'logged_by'];
   const csvRows = [headers.join(',')];
   rows.forEach(e => {
     const line = headers.map(h => {
@@ -571,6 +627,8 @@ document.getElementById('exportBtn').addEventListener('click', () => {
       let val;
       if (h === 'categories') {
         val = (e.categories || []).join('; ');
+      } else if (h === 'situations') {
+        val = (e.situations || []).join('; ');
       } else {
         val = e[key] == null ? '' : String(e[key]);
       }
@@ -612,7 +670,7 @@ form.addEventListener('submit', async (ev) => {
     setting: document.getElementById('settingSelect').value || null,
     duration_minutes: document.getElementById('durationInput').value ? parseInt(document.getElementById('durationInput').value, 10) : null,
     intensity: selectedIntensity,
-    trigger: document.getElementById('triggerInput').value || null,
+    situations: Array.from(selectedSituations),
     notes: document.getElementById('notesInput').value || null,
     logged_by: loggedByInput.value.trim() || null,
   };
@@ -628,11 +686,12 @@ form.addEventListener('submit', async (ev) => {
 
     // reset the parts of the form that shouldn't carry over
     selectedCategories = new Set();
+    selectedSituations = new Set();
     selectedIntensity = null;
     renderCategoryChips();
+    renderSituationChips();
     intensityPicker.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
     document.getElementById('durationInput').value = '';
-    document.getElementById('triggerInput').value = '';
     document.getElementById('notesInput').value = '';
     document.getElementById('entryTime').value = nowStr();
 
@@ -660,6 +719,7 @@ async function loadWhoami() {
 (async function init() {
   await loadWhoami();
   await loadCategories();
+  await loadSituations();
   await loadEntries();
 })();
 </script>

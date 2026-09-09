@@ -117,6 +117,21 @@ DEFAULT_CATEGORIES = [
     "hyperactive/restless",
 ]
 
+# Starter vocabulary for the situation/demand picker, replacing the old
+# freeform "trigger" text field. Modeled on Ross Greene's Collaborative &
+# Proactive Solutions framework: naming the specific unsolved
+# demand/situation (not just "he got upset") is what makes the log useful
+# for spotting patterns. Grows over time via the same "+ new" chip pattern
+# as categories.
+DEFAULT_SITUATIONS = [
+    "told no",
+    "asked to transition off preferred activity",
+    "non-preferred task demand",
+    "sibling conflict",
+    "unexpected change in plans",
+    "waiting/turn-taking",
+]
+
 
 def is_demo(request: Request) -> bool:
     return getattr(request.state, "demo", False)
@@ -133,6 +148,7 @@ class DemoStore:
         self._lock = threading.Lock()
         self._id_counter = itertools.count(1)
         self.categories = list(DEFAULT_CATEGORIES)
+        self.situations = list(DEFAULT_SITUATIONS)
         self.entries = []
         self._seed()
 
@@ -144,50 +160,50 @@ class DemoStore:
         seed_rows = [
             dict(
                 days_ago=0, entry_time="16:45", categories=["angry/irritable", "argumentative/defiant"], setting="home",
-                duration_minutes=20, intensity=4, trigger="told no to more screen time",
-                notes="Yelling and refusing to hand over the tablet. Took about 20 min to de-escalate.",
+                duration_minutes=20, intensity=4, situations=["told no"],
+                notes="Yelling and refusing to hand over the tablet after being told no to more screen time. Took about 20 min to de-escalate.",
                 logged_by="Demo Parent",
             ),
             dict(
                 days_ago=0, entry_time="08:15", categories=["inattentive"], setting="school",
-                duration_minutes=5, intensity=2, trigger="multi-step morning instructions",
-                notes="Lost track partway through getting backpack ready, needed a re-prompt.",
+                duration_minutes=5, intensity=2, situations=["non-preferred task demand"],
+                notes="Lost track partway through getting backpack ready (multi-step morning instructions), needed a re-prompt.",
                 logged_by="Demo Teacher",
             ),
             dict(
                 days_ago=1, entry_time="18:30", categories=["hyperactive/restless"], setting="home",
-                duration_minutes=None, intensity=1, trigger=None,
+                duration_minutes=None, intensity=1, situations=[],
                 notes="Couldn't stay seated through dinner, up and down repeatedly. Low-stakes, just noting the pattern.",
                 logged_by="Demo Parent",
             ),
             dict(
                 days_ago=1, entry_time="07:50", categories=["impulsive"], setting="transitions",
-                duration_minutes=10, intensity=3, trigger="asked to wait for breakfast",
-                notes="Grabbed food off a sibling's plate without asking, no warning first.",
+                duration_minutes=10, intensity=3, situations=["waiting/turn-taking"],
+                notes="Grabbed food off a sibling's plate without asking while waiting for breakfast, no warning first.",
                 logged_by="Demo Parent",
             ),
             dict(
                 days_ago=2, entry_time="13:10", categories=["argumentative/defiant"], setting="public",
-                duration_minutes=15, intensity=3, trigger="asked to leave the playground",
-                notes="Refused, argued about the rule itself rather than just not wanting to leave.",
+                duration_minutes=15, intensity=3, situations=["asked to transition off preferred activity"],
+                notes="Asked to leave the playground; refused, argued about the rule itself rather than just not wanting to leave.",
                 logged_by="Demo Parent",
             ),
             dict(
                 days_ago=3, entry_time="15:00", categories=["hyperactive/restless", "impulsive"], setting="home",
-                duration_minutes=30, intensity=1, trigger=None,
+                duration_minutes=30, intensity=1, situations=[],
                 notes="High energy the whole afternoon, jumping between activities without finishing any.",
                 logged_by="Demo Babysitter",
             ),
             dict(
                 days_ago=4, entry_time="09:20", categories=["inattentive"], setting="school",
-                duration_minutes=25, intensity=2, trigger="independent seatwork",
-                notes="Drifted off task repeatedly, needed several redirects to finish the worksheet.",
+                duration_minutes=25, intensity=2, situations=["non-preferred task demand"],
+                notes="Drifted off task repeatedly during independent seatwork, needed several redirects to finish the worksheet.",
                 logged_by="Demo Teacher",
             ),
             dict(
                 days_ago=5, entry_time="17:40", categories=["vindictive"], setting="home",
-                duration_minutes=8, intensity=3, trigger="sibling was allowed to pick the show",
-                notes="Deliberately broke a piece of the sibling's toy afterward, said it was on purpose.",
+                duration_minutes=8, intensity=3, situations=["sibling conflict"],
+                notes="Sibling was allowed to pick the show; deliberately broke a piece of the sibling's toy afterward, said it was on purpose.",
                 logged_by="Demo Parent",
             ),
         ]
@@ -202,7 +218,7 @@ class DemoStore:
                     "setting": row["setting"],
                     "duration_minutes": row["duration_minutes"],
                     "intensity": row["intensity"],
-                    "trigger": row["trigger"],
+                    "situations": row["situations"],
                     "notes": row["notes"],
                     "logged_by": row["logged_by"],
                 }
@@ -226,7 +242,7 @@ class DemoStore:
                 "setting": entry.setting,
                 "duration_minutes": entry.duration_minutes,
                 "intensity": entry.intensity,
-                "trigger": entry.trigger,
+                "situations": entry.situations,
                 "notes": entry.notes,
                 "logged_by": entry.logged_by,
             }
@@ -247,6 +263,15 @@ class DemoStore:
         with self._lock:
             if name not in self.categories:
                 self.categories.append(name)
+
+    def list_situations(self):
+        with self._lock:
+            return sorted(self.situations)
+
+    def create_situation(self, name: str):
+        with self._lock:
+            if name not in self.situations:
+                self.situations.append(name)
 
 
 demo_store = DemoStore()
@@ -280,6 +305,14 @@ def init_db():
             )
             cur.execute(
                 """
+                CREATE TABLE IF NOT EXISTS situations (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT UNIQUE NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                """
                 CREATE TABLE IF NOT EXISTS entries (
                     id SERIAL PRIMARY KEY,
                     entry_date DATE NOT NULL,
@@ -288,7 +321,7 @@ def init_db():
                     setting TEXT,
                     duration_minutes INTEGER,
                     intensity INTEGER,
-                    trigger TEXT,
+                    situations TEXT[] NOT NULL DEFAULT '{}',
                     notes TEXT,
                     logged_by TEXT,
                     created_at TIMESTAMPTZ DEFAULT now()
@@ -300,9 +333,15 @@ def init_db():
                     "INSERT INTO categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
                     (cat,),
                 )
+            for situation in DEFAULT_SITUATIONS:
+                cur.execute(
+                    "INSERT INTO situations (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+                    (situation,),
+                )
         conn.commit()
     migrate_single_category_column(conn=None)
     migrate_category_taxonomy(conn=None)
+    migrate_trigger_to_situations(conn=None)
 
 
 def migrate_category_taxonomy(conn=None):
@@ -323,6 +362,58 @@ def migrate_category_taxonomy(conn=None):
                 "DELETE FROM categories WHERE name = ANY(%s)",
                 (RETIRED_DEFAULT_CATEGORIES,),
             )
+        conn.commit()
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+def migrate_trigger_to_situations(conn=None):
+    """Replace the old freeform `trigger TEXT` column with the structured
+    `situations TEXT[]` picker. Any existing freeform trigger text is folded
+    into `notes` (prefixed "Trigger: ...") so nothing already logged is lost
+    -- it just won't be one of the new structured, filterable tags. Safe to
+    run on every startup: each step is a no-op once already applied.
+    """
+    owns_conn = conn is None
+    if owns_conn:
+        conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'entries' AND column_name = 'situations'
+                """
+            )
+            has_situations_column = cur.fetchone() is not None
+            if not has_situations_column:
+                cur.execute(
+                    """
+                    ALTER TABLE entries
+                    ADD COLUMN situations TEXT[] NOT NULL DEFAULT '{}'
+                    """
+                )
+
+            cur.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'entries' AND column_name = 'trigger'
+                """
+            )
+            has_trigger_column = cur.fetchone() is not None
+            if has_trigger_column:
+                cur.execute(
+                    """
+                    UPDATE entries
+                    SET notes = CASE
+                        WHEN notes IS NULL OR notes = '' THEN 'Trigger: ' || trigger
+                        ELSE notes || E'\n\nTrigger: ' || trigger
+                    END
+                    WHERE trigger IS NOT NULL AND trigger <> ''
+                    """
+                )
+                cur.execute("ALTER TABLE entries DROP COLUMN trigger")
         conn.commit()
     finally:
         if owns_conn:
@@ -374,6 +465,18 @@ def on_startup():
     init_db()
 
 
+def _clean_tag_list(value: List[str]) -> List[str]:
+    cleaned = [c.strip().lower() for c in value if c and c.strip()]
+    # de-dupe while preserving order
+    seen = set()
+    deduped = []
+    for c in cleaned:
+        if c not in seen:
+            seen.add(c)
+            deduped.append(c)
+    return deduped
+
+
 class EntryIn(BaseModel):
     entry_date: date
     entry_time: Optional[time] = None
@@ -381,27 +484,31 @@ class EntryIn(BaseModel):
     setting: Optional[str] = None
     duration_minutes: Optional[int] = None
     intensity: Optional[int] = None
-    trigger: Optional[str] = None
+    # Optional, unlike categories -- a specific situation/demand isn't always
+    # identifiable for a given entry.
+    situations: List[str] = []
     notes: Optional[str] = None
     logged_by: Optional[str] = None
 
     @field_validator("categories")
     @classmethod
     def categories_not_empty(cls, value: List[str]) -> List[str]:
-        cleaned = [c.strip().lower() for c in value if c and c.strip()]
-        # de-dupe while preserving order
-        seen = set()
-        deduped = []
-        for c in cleaned:
-            if c not in seen:
-                seen.add(c)
-                deduped.append(c)
+        deduped = _clean_tag_list(value)
         if not deduped:
             raise ValueError("At least one category is required")
         return deduped
 
+    @field_validator("situations")
+    @classmethod
+    def clean_situations(cls, value: List[str]) -> List[str]:
+        return _clean_tag_list(value)
+
 
 class CategoryIn(BaseModel):
+    name: str
+
+
+class SituationIn(BaseModel):
     name: str
 
 
@@ -439,7 +546,7 @@ def create_entry(entry: EntryIn, request: Request):
                 """
                 INSERT INTO entries
                     (entry_date, entry_time, categories, setting, duration_minutes,
-                     intensity, trigger, notes, logged_by)
+                     intensity, situations, notes, logged_by)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
@@ -450,7 +557,7 @@ def create_entry(entry: EntryIn, request: Request):
                     entry.setting,
                     entry.duration_minutes,
                     entry.intensity,
-                    entry.trigger,
+                    entry.situations,
                     entry.notes,
                     entry.logged_by,
                 ),
@@ -499,6 +606,35 @@ def create_category(category: CategoryIn, request: Request):
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+                (name,),
+            )
+        conn.commit()
+    return {"name": name}
+
+
+@app.get("/api/situations")
+def list_situations(request: Request):
+    if is_demo(request):
+        return demo_store.list_situations()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT name FROM situations ORDER BY name")
+            rows = cur.fetchall()
+    return [r[0] for r in rows]
+
+
+@app.post("/api/situations")
+def create_situation(situation: SituationIn, request: Request):
+    name = situation.name.strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="Situation name cannot be empty")
+    if is_demo(request):
+        demo_store.create_situation(name)
+        return {"name": name}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO situations (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
                 (name,),
             )
         conn.commit()
