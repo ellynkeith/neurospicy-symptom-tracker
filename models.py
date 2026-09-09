@@ -108,6 +108,10 @@ class DailyLogIn(BaseModel):
     logged exercise, or vice versa."""
     entry_date: date
     bedtime: Optional[time] = None
+    # Distinct from bedtime -- when they actually fell asleep vs. when they
+    # got into bed. Sleep-onset latency (the gap between the two) is its
+    # own useful signal, not just total time in bed.
+    fell_asleep_time: Optional[time] = None
     wake_time: Optional[time] = None
     night_awakenings: Optional[int] = None
     exercise_minutes: Optional[int] = None

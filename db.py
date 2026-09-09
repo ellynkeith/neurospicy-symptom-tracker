@@ -55,6 +55,15 @@ def init_db():
                 )
                 """
             )
+            # Added after daily_logs already existed on some deployments --
+            # bedtime (lights out / got in bed) and fell_asleep_time (sleep
+            # actually started) are distinct and both worth tracking
+            # separately (sleep-onset latency is its own signal). Plain
+            # ADD COLUMN IF NOT EXISTS is enough here since it's a single
+            # nullable column, no data to preserve/transform.
+            cur.execute(
+                "ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS fell_asleep_time TIME"
+            )
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS entries (

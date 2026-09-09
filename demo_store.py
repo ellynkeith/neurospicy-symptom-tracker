@@ -94,18 +94,19 @@ class DemoStore:
             )
 
         seed_daily = [
-            dict(days_ago=0, bedtime="21:00", wake_time="07:00", night_awakenings=1,
-                 exercise_minutes=30, exercise_type="aerobic"),
-            dict(days_ago=1, bedtime="21:30", wake_time="06:45", night_awakenings=0,
-                 exercise_minutes=20, exercise_type="cognitively-engaging"),
-            dict(days_ago=3, bedtime="22:15", wake_time="07:15", night_awakenings=2,
-                 exercise_minutes=None, exercise_type=None),
+            dict(days_ago=0, bedtime="21:00", fell_asleep_time="21:35", wake_time="07:00",
+                 night_awakenings=1, exercise_minutes=30, exercise_type="aerobic"),
+            dict(days_ago=1, bedtime="21:30", fell_asleep_time="21:40", wake_time="06:45",
+                 night_awakenings=0, exercise_minutes=20, exercise_type="cognitively-engaging"),
+            dict(days_ago=3, bedtime="22:15", fell_asleep_time=None, wake_time="07:15",
+                 night_awakenings=2, exercise_minutes=None, exercise_type=None),
         ]
         for row in seed_daily:
             entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
             self.daily_logs[entry_date] = {
                 "entry_date": entry_date,
                 "bedtime": row["bedtime"],
+                "fell_asleep_time": row["fell_asleep_time"],
                 "wake_time": row["wake_time"],
                 "night_awakenings": row["night_awakenings"],
                 "exercise_minutes": row["exercise_minutes"],
@@ -170,6 +171,7 @@ class DemoStore:
             row = {
                 "entry_date": log.entry_date.isoformat(),
                 "bedtime": log.bedtime.isoformat() if log.bedtime else None,
+                "fell_asleep_time": log.fell_asleep_time.isoformat() if log.fell_asleep_time else None,
                 "wake_time": log.wake_time.isoformat() if log.wake_time else None,
                 "night_awakenings": log.night_awakenings,
                 "exercise_minutes": log.exercise_minutes,

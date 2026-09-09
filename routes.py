@@ -158,11 +158,12 @@ def upsert_daily_log(log: DailyLogIn, request: Request):
             cur.execute(
                 """
                 INSERT INTO daily_logs
-                    (entry_date, bedtime, wake_time, night_awakenings,
+                    (entry_date, bedtime, fell_asleep_time, wake_time, night_awakenings,
                      exercise_minutes, exercise_type)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (entry_date) DO UPDATE SET
                     bedtime = EXCLUDED.bedtime,
+                    fell_asleep_time = EXCLUDED.fell_asleep_time,
                     wake_time = EXCLUDED.wake_time,
                     night_awakenings = EXCLUDED.night_awakenings,
                     exercise_minutes = EXCLUDED.exercise_minutes,
@@ -172,6 +173,7 @@ def upsert_daily_log(log: DailyLogIn, request: Request):
                 (
                     log.entry_date,
                     log.bedtime,
+                    log.fell_asleep_time,
                     log.wake_time,
                     log.night_awakenings,
                     log.exercise_minutes,

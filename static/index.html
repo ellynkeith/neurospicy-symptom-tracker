@@ -370,6 +370,10 @@
           <input type="time" id="bedtimeInput">
         </div>
         <div class="field">
+          <label for="fellAsleepInput">Fell asleep</label>
+          <input type="time" id="fellAsleepInput">
+        </div>
+        <div class="field">
           <label for="wakeTimeInput">Wake time</label>
           <input type="time" id="wakeTimeInput">
         </div>
@@ -548,6 +552,7 @@ async function loadSituations() {
 // how many behavior entries exist that day) ----
 const dailyDateInput = document.getElementById('dailyDate');
 const bedtimeInput = document.getElementById('bedtimeInput');
+const fellAsleepInput = document.getElementById('fellAsleepInput');
 const wakeTimeInput = document.getElementById('wakeTimeInput');
 const nightAwakeningsInput = document.getElementById('nightAwakeningsInput');
 const exerciseMinutesInput = document.getElementById('exerciseMinutesInput');
@@ -555,17 +560,20 @@ const exerciseTypeSelect = document.getElementById('exerciseTypeSelect');
 
 function hasDailyContent(log) {
   return !!log && (
-    log.bedtime != null || log.wake_time != null || log.night_awakenings != null ||
-    log.exercise_minutes != null || !!log.exercise_type
+    log.bedtime != null || log.fell_asleep_time != null || log.wake_time != null ||
+    log.night_awakenings != null || log.exercise_minutes != null || !!log.exercise_type
   );
 }
 
 function fmtDailySummary(log) {
   const parts = [];
-  if (log.bedtime || log.wake_time || log.night_awakenings != null) {
+  if (log.bedtime || log.fell_asleep_time || log.wake_time || log.night_awakenings != null) {
     let sleepPart = (log.bedtime || log.wake_time)
       ? `Sleep ${log.bedtime ? fmtTime(log.bedtime) : '?'}–${log.wake_time ? fmtTime(log.wake_time) : '?'}`
       : 'Sleep';
+    if (log.fell_asleep_time) {
+      sleepPart += ` (asleep ~${fmtTime(log.fell_asleep_time)})`;
+    }
     if (log.night_awakenings != null) {
       sleepPart += ` · ${log.night_awakenings} waking${log.night_awakenings === 1 ? '' : 's'}`;
     }
@@ -583,6 +591,7 @@ function fmtDailySummary(log) {
 function populateDailyFormForDate(dateStr) {
   const log = dailyLogMap[dateStr];
   bedtimeInput.value = log && log.bedtime ? log.bedtime.slice(0, 5) : '';
+  fellAsleepInput.value = log && log.fell_asleep_time ? log.fell_asleep_time.slice(0, 5) : '';
   wakeTimeInput.value = log && log.wake_time ? log.wake_time.slice(0, 5) : '';
   nightAwakeningsInput.value = (log && log.night_awakenings != null) ? log.night_awakenings : '';
   exerciseMinutesInput.value = (log && log.exercise_minutes != null) ? log.exercise_minutes : '';
@@ -872,6 +881,7 @@ dailyForm.addEventListener('submit', async (ev) => {
   const payload = {
     entry_date: dailyDateInput.value,
     bedtime: bedtimeInput.value || null,
+    fell_asleep_time: fellAsleepInput.value || null,
     wake_time: wakeTimeInput.value || null,
     night_awakenings: nightAwakeningsInput.value ? parseInt(nightAwakeningsInput.value, 10) : null,
     exercise_minutes: exerciseMinutesInput.value ? parseInt(exerciseMinutesInput.value, 10) : null,
