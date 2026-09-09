@@ -4,7 +4,7 @@ from contextlib import contextmanager
 import psycopg2
 from fastapi import HTTPException
 
-from models import DEFAULT_CATEGORIES, DEFAULT_SITUATIONS, RETIRED_DEFAULT_CATEGORIES
+from models import DEFAULT_CATEGORIES, DEFAULT_SITUATIONS
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -115,122 +115,10 @@ def init_db():
                     (situation,),
                 )
         conn.commit()
-    migrate_single_category_column(conn=None)
-    migrate_category_taxonomy(conn=None)
-    migrate_trigger_to_situations(conn=None)
-
-
-def migrate_category_taxonomy(conn=None):
-    """Remove the old autism-coded default categories (see
-    RETIRED_DEFAULT_CATEGORIES) from an existing deployment's `categories`
-    table. Only ever deletes those specific, known-retired names -- any
-    category the user added herself is left untouched. Existing entries
-    already tagged with a retired category keep that tag; it just won't
-    appear as a suggested chip or filter option going forward. Safe to run
-    on every startup: a no-op once the retired rows are gone.
-    """
-    owns_conn = conn is None
-    if owns_conn:
-        conn = psycopg2.connect(DATABASE_URL)
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM categories WHERE name = ANY(%s)",
-                (RETIRED_DEFAULT_CATEGORIES,),
-            )
-        conn.commit()
-    finally:
-        if owns_conn:
-            conn.close()
-
-
-def migrate_trigger_to_situations(conn=None):
-    """Replace the old freeform `trigger TEXT` column with the structured
-    `situations TEXT[]` picker. Any existing freeform trigger text is folded
-    into `notes` (prefixed "Trigger: ...") so nothing already logged is lost
-    -- it just won't be one of the new structured, filterable tags. Safe to
-    run on every startup: each step is a no-op once already applied.
-    """
-    owns_conn = conn is None
-    if owns_conn:
-        conn = psycopg2.connect(DATABASE_URL)
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name = 'entries' AND column_name = 'situations'
-                """
-            )
-            has_situations_column = cur.fetchone() is not None
-            if not has_situations_column:
-                cur.execute(
-                    """
-                    ALTER TABLE entries
-                    ADD COLUMN situations TEXT[] NOT NULL DEFAULT '{}'
-                    """
-                )
-
-            cur.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name = 'entries' AND column_name = 'trigger'
-                """
-            )
-            has_trigger_column = cur.fetchone() is not None
-            if has_trigger_column:
-                cur.execute(
-                    """
-                    UPDATE entries
-                    SET notes = CASE
-                        WHEN notes IS NULL OR notes = '' THEN 'Trigger: ' || trigger
-                        ELSE notes || E'\n\nTrigger: ' || trigger
-                    END
-                    WHERE trigger IS NOT NULL AND trigger <> ''
-                    """
-                )
-                cur.execute("ALTER TABLE entries DROP COLUMN trigger")
-        conn.commit()
-    finally:
-        if owns_conn:
-            conn.close()
-
-
-def migrate_single_category_column(conn=None):
-    """Migrate an older deployment's singular `category TEXT` column to the
-    current `categories TEXT[]` column, preserving existing data. Safe to run
-    on every startup: each step is a no-op once the migration has happened.
-    """
-    owns_conn = conn is None
-    if owns_conn:
-        conn = psycopg2.connect(DATABASE_URL)
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name = 'entries' AND column_name = 'category'
-                """
-            )
-            has_old_column = cur.fetchone() is not None
-
-            if has_old_column:
-                cur.execute(
-                    """
-                    ALTER TABLE entries
-                    ADD COLUMN IF NOT EXISTS categories TEXT[] NOT NULL DEFAULT '{}'
-                    """
-                )
-                cur.execute(
-                    """
-                    UPDATE entries
-                    SET categories = ARRAY[category]
-                    WHERE category IS NOT NULL
-                      AND (categories IS NULL OR categories = '{}')
-                    """
-                )
-                cur.execute("ALTER TABLE entries DROP COLUMN category")
-        conn.commit()
-    finally:
-        if owns_conn:
-            conn.close()
+    # Three one-off migrations (singular category -> categories[],
+    # retired-taxonomy cleanup, trigger -> situations) used to run here.
+    # Removed 2026-09-09: all three target schema states this deployment
+    # moved past long ago (confirmed via the live app's history: commits
+    # baed264 and c9031d7), so they'd become permanent no-ops that still
+    # paid for a fresh DB connection each on every single startup. See git
+    # history if a from-scratch database somehow needs them again.

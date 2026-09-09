@@ -3,22 +3,6 @@ from typing import List, Optional
 
 from pydantic import BaseModel, field_validator
 
-# Taxonomy retired 2026-09-09: it was autism-coded (sensory processing,
-# stimming, shutdown), which doesn't match this kid's actual evaluated
-# profile (ADHD + ODD; specifically assessed for and ruled out for ASD).
-# Kept here only so migrate_category_taxonomy() knows exactly which rows to
-# remove from an existing deployment's `categories` table -- never inserted.
-RETIRED_DEFAULT_CATEGORIES = [
-    "meltdown",
-    "shutdown",
-    "sensory seeking",
-    "sensory avoidance",
-    "stimming",
-    "anxiety",
-    "rigidity",
-    "aggression",
-]
-
 # DSM-5 ODD's three symptom clusters (angry/irritable mood,
 # argumentative/defiant behavior, vindictiveness) plus the three ADHD
 # presentations (impulsive, inattentive, hyperactive/restless).
