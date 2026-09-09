@@ -121,8 +121,9 @@ class DemoStore:
             }
 
         seed_wetting = [
-            dict(days_ago=0, incident_time="14:15", setting="school", response="noncompliant"),
-            dict(days_ago=2, incident_time="10:00", setting="home", response="compliant"),
+            dict(days_ago=0, incident_time="14:15", setting="school", response="noncompliant",
+                 notes="Refused to change out of wet clothes for a few minutes."),
+            dict(days_ago=2, incident_time="10:00", setting="home", response="compliant", notes=None),
         ]
         for row in seed_wetting:
             entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
@@ -133,6 +134,7 @@ class DemoStore:
                     "incident_time": row["incident_time"],
                     "setting": row["setting"],
                     "response": row["response"],
+                    "notes": row["notes"],
                 }
             )
 
@@ -219,6 +221,7 @@ class DemoStore:
                 "incident_time": incident.incident_time.isoformat() if incident.incident_time else None,
                 "setting": incident.setting,
                 "response": incident.response,
+                "notes": incident.notes,
             }
             self.wetting_incidents.append(row)
             return row

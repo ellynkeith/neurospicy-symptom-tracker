@@ -92,9 +92,17 @@ def init_db():
                     incident_time TIME,
                     setting TEXT,
                     response TEXT NOT NULL,
+                    notes TEXT,
                     created_at TIMESTAMPTZ DEFAULT now()
                 )
                 """
+            )
+            # Added after wetting_incidents already existed on some
+            # deployments -- optional freeform space for anything the
+            # time/where/response fields don't capture. Single nullable
+            # column, nothing to preserve/transform.
+            cur.execute(
+                "ALTER TABLE wetting_incidents ADD COLUMN IF NOT EXISTS notes TEXT"
             )
             for cat in DEFAULT_CATEGORIES:
                 cur.execute(

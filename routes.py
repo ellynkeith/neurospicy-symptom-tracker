@@ -208,8 +208,8 @@ def create_wetting_incident(incident: WettingIncidentIn, request: Request):
             cur.execute(
                 """
                 INSERT INTO wetting_incidents
-                    (entry_date, incident_time, setting, response)
-                VALUES (%s, %s, %s, %s)
+                    (entry_date, incident_time, setting, response, notes)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
@@ -217,6 +217,7 @@ def create_wetting_incident(incident: WettingIncidentIn, request: Request):
                     incident.incident_time,
                     incident.setting,
                     incident.response,
+                    incident.notes,
                 ),
             )
             row = cur.fetchone()

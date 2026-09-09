@@ -293,16 +293,15 @@
   }
   .wetting-list { margin-bottom: 12px; }
   .wetting-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
     padding: 6px 0;
     font-size: 0.85rem;
     border-bottom: 1px solid var(--paper-dim);
   }
   .wetting-item:last-child { border-bottom: none; }
+  .wetting-item-head { display: flex; align-items: center; gap: 10px; }
   .wetting-item .entry-time { width: 64px; flex-shrink: 0; color: var(--ink-soft); font-size: 0.85rem; }
   .wetting-item .wetting-setting { color: var(--ink-soft); flex: 1; }
+  .wetting-item-notes { font-size: 0.82rem; color: var(--ink-soft); margin-top: 4px; }
   .wetting-empty {
     color: var(--ink-soft);
     font-size: 0.82rem;
@@ -469,6 +468,10 @@
         <div class="field">
           <button type="button" class="primary" id="addWettingBtn">Add incident</button>
         </div>
+      </div>
+      <div class="field">
+        <label for="wettingNotesInput">Additional details (optional)</label>
+        <textarea id="wettingNotesInput" placeholder="What was going on right before, how she reacted after, anything else worth remembering"></textarea>
       </div>
       <div class="status" id="wettingStatus"></div>
     </div>
@@ -687,6 +690,7 @@ async function loadDailyLogs() {
 const wettingTimeInput = document.getElementById('wettingTimeInput');
 const wettingSettingSelect = document.getElementById('wettingSettingSelect');
 const wettingResponseSelect = document.getElementById('wettingResponseSelect');
+const wettingNotesInput = document.getElementById('wettingNotesInput');
 const wettingList = document.getElementById('wettingList');
 const wettingStatus = document.getElementById('wettingStatus');
 const addWettingBtn = document.getElementById('addWettingBtn');
@@ -706,26 +710,38 @@ function renderWettingListForDate(dateStr) {
     const item = document.createElement('div');
     item.className = 'wetting-item';
 
+    const head = document.createElement('div');
+    head.className = 'wetting-item-head';
+
     const time = document.createElement('div');
     time.className = 'entry-time';
     time.textContent = fmtTime(w.incident_time);
-    item.appendChild(time);
+    head.appendChild(time);
 
     const respBadge = document.createElement('span');
     respBadge.className = 'badge' + (w.response === 'noncompliant' ? ' response-noncompliant' : '');
     respBadge.textContent = fmtResponse(w.response);
-    item.appendChild(respBadge);
+    head.appendChild(respBadge);
 
     const setting = document.createElement('div');
     setting.className = 'wetting-setting';
     setting.textContent = w.setting || '';
-    item.appendChild(setting);
+    head.appendChild(setting);
 
     const delBtn = document.createElement('button');
     delBtn.className = 'delete-btn';
     delBtn.textContent = 'delete';
     delBtn.addEventListener('click', () => deleteWettingIncident(w.id));
-    item.appendChild(delBtn);
+    head.appendChild(delBtn);
+
+    item.appendChild(head);
+
+    if (w.notes) {
+      const notes = document.createElement('div');
+      notes.className = 'wetting-item-notes';
+      notes.textContent = w.notes;
+      item.appendChild(notes);
+    }
 
     wettingList.appendChild(item);
   });
@@ -764,6 +780,7 @@ addWettingBtn.addEventListener('click', async () => {
     incident_time: wettingTimeInput.value || null,
     setting: wettingSettingSelect.value || null,
     response: wettingResponseSelect.value,
+    notes: wettingNotesInput.value || null,
   };
 
   addWettingBtn.disabled = true;
@@ -778,6 +795,7 @@ addWettingBtn.addEventListener('click', async () => {
     wettingTimeInput.value = '';
     wettingSettingSelect.value = '';
     wettingResponseSelect.value = '';
+    wettingNotesInput.value = '';
 
     await loadWettingIncidents();
     renderWettingListForDate(dailyDateInput.value);
@@ -907,6 +925,13 @@ function renderEntries() {
         wMeta.className = 'entry-meta';
         wMeta.textContent = w.setting;
         wBody.appendChild(wMeta);
+      }
+
+      if (w.notes) {
+        const wNotes = document.createElement('div');
+        wNotes.className = 'entry-notes';
+        wNotes.textContent = w.notes;
+        wBody.appendChild(wNotes);
       }
 
       wRow.appendChild(wBody);
