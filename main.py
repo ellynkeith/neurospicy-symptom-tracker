@@ -89,7 +89,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DEFAULT_CATEGORIES = [
+# Taxonomy retired 2026-09-09: it was autism-coded (sensory processing,
+# stimming, shutdown), which doesn't match this kid's actual evaluated
+# profile (ADHD + ODD; specifically assessed for and ruled out for ASD).
+# Kept here only so migrate_category_taxonomy() knows exactly which rows to
+# remove from an existing deployment's `categories` table -- never inserted.
+RETIRED_DEFAULT_CATEGORIES = [
     "meltdown",
     "shutdown",
     "sensory seeking",
@@ -98,6 +103,18 @@ DEFAULT_CATEGORIES = [
     "anxiety",
     "rigidity",
     "aggression",
+]
+
+# DSM-5 ODD's three symptom clusters (angry/irritable mood,
+# argumentative/defiant behavior, vindictiveness) plus the three ADHD
+# presentations (impulsive, inattentive, hyperactive/restless).
+DEFAULT_CATEGORIES = [
+    "angry/irritable",
+    "argumentative/defiant",
+    "vindictive",
+    "impulsive",
+    "inattentive",
+    "hyperactive/restless",
 ]
 
 
@@ -126,51 +143,51 @@ class DemoStore:
         today = date.today()
         seed_rows = [
             dict(
-                days_ago=0, entry_time="16:45", categories=["meltdown", "aggression"], setting="home",
-                duration_minutes=20, intensity=4, trigger="transition from screen time",
-                notes="Took about 20 min to settle. Dimming the lights helped.",
+                days_ago=0, entry_time="16:45", categories=["angry/irritable", "argumentative/defiant"], setting="home",
+                duration_minutes=20, intensity=4, trigger="told no to more screen time",
+                notes="Yelling and refusing to hand over the tablet. Took about 20 min to de-escalate.",
                 logged_by="Demo Parent",
             ),
             dict(
-                days_ago=0, entry_time="08:15", categories=["sensory avoidance"], setting="school",
-                duration_minutes=5, intensity=2, trigger="loud cafeteria",
-                notes="Asked for noise-canceling headphones, worked well.",
+                days_ago=0, entry_time="08:15", categories=["inattentive"], setting="school",
+                duration_minutes=5, intensity=2, trigger="multi-step morning instructions",
+                notes="Lost track partway through getting backpack ready, needed a re-prompt.",
                 logged_by="Demo Teacher",
             ),
             dict(
-                days_ago=1, entry_time="18:30", categories=["stimming"], setting="home",
+                days_ago=1, entry_time="18:30", categories=["hyperactive/restless"], setting="home",
                 duration_minutes=None, intensity=1, trigger=None,
-                notes="Hand-flapping during favorite show, seemed happy/regulated.",
+                notes="Couldn't stay seated through dinner, up and down repeatedly. Low-stakes, just noting the pattern.",
                 logged_by="Demo Parent",
             ),
             dict(
-                days_ago=1, entry_time="07:50", categories=["rigidity", "anxiety"], setting="transitions",
-                duration_minutes=10, intensity=3, trigger="unexpected change in morning routine",
-                notes="Wanted the usual breakfast order, got upset when we were out of the usual cereal.",
+                days_ago=1, entry_time="07:50", categories=["impulsive"], setting="transitions",
+                duration_minutes=10, intensity=3, trigger="asked to wait for breakfast",
+                notes="Grabbed food off a sibling's plate without asking, no warning first.",
                 logged_by="Demo Parent",
             ),
             dict(
-                days_ago=2, entry_time="13:10", categories=["anxiety"], setting="public",
-                duration_minutes=15, intensity=3, trigger="crowded store",
-                notes="Asked to leave, felt better once we were back in the car.",
+                days_ago=2, entry_time="13:10", categories=["argumentative/defiant"], setting="public",
+                duration_minutes=15, intensity=3, trigger="asked to leave the playground",
+                notes="Refused, argued about the rule itself rather than just not wanting to leave.",
                 logged_by="Demo Parent",
             ),
             dict(
-                days_ago=3, entry_time="15:00", categories=["sensory seeking"], setting="home",
+                days_ago=3, entry_time="15:00", categories=["hyperactive/restless", "impulsive"], setting="home",
                 duration_minutes=30, intensity=1, trigger=None,
-                notes="Long stretch of jumping on the trampoline, very regulated afterward.",
+                notes="High energy the whole afternoon, jumping between activities without finishing any.",
                 logged_by="Demo Babysitter",
             ),
             dict(
-                days_ago=4, entry_time="09:20", categories=["shutdown"], setting="school",
-                duration_minutes=25, intensity=4, trigger="fire drill",
-                notes="Went quiet and unresponsive for a while, recovered with a quiet break.",
+                days_ago=4, entry_time="09:20", categories=["inattentive"], setting="school",
+                duration_minutes=25, intensity=2, trigger="independent seatwork",
+                notes="Drifted off task repeatedly, needed several redirects to finish the worksheet.",
                 logged_by="Demo Teacher",
             ),
             dict(
-                days_ago=5, entry_time="17:40", categories=["aggression"], setting="home",
-                duration_minutes=8, intensity=3, trigger="sibling took a toy",
-                notes="Brief, resolved with a reset in another room.",
+                days_ago=5, entry_time="17:40", categories=["vindictive"], setting="home",
+                duration_minutes=8, intensity=3, trigger="sibling was allowed to pick the show",
+                notes="Deliberately broke a piece of the sibling's toy afterward, said it was on purpose.",
                 logged_by="Demo Parent",
             ),
         ]
@@ -285,6 +302,31 @@ def init_db():
                 )
         conn.commit()
     migrate_single_category_column(conn=None)
+    migrate_category_taxonomy(conn=None)
+
+
+def migrate_category_taxonomy(conn=None):
+    """Remove the old autism-coded default categories (see
+    RETIRED_DEFAULT_CATEGORIES) from an existing deployment's `categories`
+    table. Only ever deletes those specific, known-retired names -- any
+    category the user added herself is left untouched. Existing entries
+    already tagged with a retired category keep that tag; it just won't
+    appear as a suggested chip or filter option going forward. Safe to run
+    on every startup: a no-op once the retired rows are gone.
+    """
+    owns_conn = conn is None
+    if owns_conn:
+        conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM categories WHERE name = ANY(%s)",
+                (RETIRED_DEFAULT_CATEGORIES,),
+            )
+        conn.commit()
+    finally:
+        if owns_conn:
+            conn.close()
 
 
 def migrate_single_category_column(conn=None):
