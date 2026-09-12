@@ -163,6 +163,22 @@ class DemoStore:
             self.entries.append(row)
             return row
 
+    def update_entry(self, entry_id: int, entry: EntryIn):
+        with self._lock:
+            for row in self.entries:
+                if row["id"] == entry_id:
+                    row["entry_date"] = entry.entry_date.isoformat()
+                    row["entry_time"] = entry.entry_time.isoformat() if entry.entry_time else None
+                    row["categories"] = entry.categories
+                    row["setting"] = entry.setting
+                    row["duration_minutes"] = entry.duration_minutes
+                    row["intensity"] = entry.intensity
+                    row["situations"] = entry.situations
+                    row["notes"] = entry.notes
+                    row["logged_by"] = entry.logged_by
+                    return row
+            return None
+
     def delete_entry(self, entry_id: int) -> bool:
         with self._lock:
             before = len(self.entries)

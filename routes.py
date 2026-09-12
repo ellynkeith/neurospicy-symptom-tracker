@@ -64,6 +64,44 @@ def create_entry(entry: EntryIn, request: Request):
     return row
 
 
+@router.put("/api/entries/{entry_id}")
+def update_entry(entry_id: int, entry: EntryIn, request: Request):
+    if is_demo(request):
+        updated = demo_store.update_entry(entry_id, entry)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Entry not found")
+        return updated
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE entries
+                SET entry_date = %s, entry_time = %s, categories = %s, setting = %s,
+                    duration_minutes = %s, intensity = %s, situations = %s, notes = %s,
+                    logged_by = %s
+                WHERE id = %s
+                RETURNING *
+                """,
+                (
+                    entry.entry_date,
+                    entry.entry_time,
+                    entry.categories,
+                    entry.setting,
+                    entry.duration_minutes,
+                    entry.intensity,
+                    entry.situations,
+                    entry.notes,
+                    entry.logged_by,
+                    entry_id,
+                ),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    return row
+
+
 @router.delete("/api/entries/{entry_id}")
 def delete_entry(entry_id: int, request: Request):
     if is_demo(request):

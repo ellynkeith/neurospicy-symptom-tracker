@@ -131,7 +131,7 @@
     color: #fff;
   }
 
-  .submit-row { display: flex; justify-content: flex-end; }
+  .submit-row { display: flex; justify-content: flex-end; align-items: center; gap: 16px; }
   button.primary {
     background: var(--teal);
     color: #fff;
@@ -219,7 +219,7 @@
   .dot.on { background: var(--danger); }
   .entry-meta { font-size: 0.82rem; color: var(--ink-soft); }
   .entry-notes { font-size: 0.9rem; margin-top: 4px; }
-  .entry-actions { margin-left: auto; }
+  .entry-actions { margin-left: auto; display: flex; gap: 12px; }
   .delete-btn {
     background: none;
     border: none;
@@ -325,7 +325,7 @@
   </header>
 
   <section>
-    <div class="section-title">New entry</div>
+    <div class="section-title" id="entrySectionTitle">New entry</div>
     <form id="entryForm">
       <div class="row">
         <div class="field">
@@ -383,6 +383,7 @@
       </div>
 
       <div class="submit-row">
+        <button type="button" class="link-btn" id="cancelEditBtn" hidden>Cancel edit</button>
         <button type="submit" class="primary" id="submitBtn">Log entry</button>
       </div>
       <div class="status" id="formStatus"></div>
@@ -502,8 +503,15 @@ let wettingIncidents = [];
 let wettingByDate = {};
 
 function todayStr() {
+  // Deliberately NOT toISOString() -- that formats in UTC, so anyone west
+  // of UTC (all of the US) would see the date roll over to tomorrow in the
+  // evening, hours before midnight actually arrives locally. Build the
+  // string from the local date components instead.
   const d = new Date();
-  return d.toISOString().slice(0, 10);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 function nowStr() {
   const d = new Date();
@@ -987,6 +995,11 @@ function renderEntries() {
 
       const actions = document.createElement('span');
       actions.className = 'entry-actions';
+      const editBtn = document.createElement('button');
+      editBtn.className = 'delete-btn';
+      editBtn.textContent = 'edit';
+      editBtn.addEventListener('click', () => startEditEntry(e));
+      actions.appendChild(editBtn);
       const delBtn = document.createElement('button');
       delBtn.className = 'delete-btn';
       delBtn.textContent = 'delete';
@@ -1033,6 +1046,74 @@ async function deleteEntry(id) {
   await fetch(`${API}/entries/${id}`, { method: 'DELETE' });
   await loadEntries();
 }
+
+// ---- editing an existing entry (reuses the "New entry" form) ----
+let editingEntryId = null;
+// The name typed into "Logging as" is per-browser and persists across
+// entries -- editing someone else's entry shouldn't silently reassign it
+// to whoever happens to be editing, so their own name is restored once
+// the edit finishes or is cancelled.
+let editRestoreLoggedBy = null;
+const entrySectionTitle = document.getElementById('entrySectionTitle');
+const cancelEditBtn = document.getElementById('cancelEditBtn');
+
+function startEditEntry(e) {
+  editingEntryId = e.id;
+  editRestoreLoggedBy = loggedByInput.value;
+
+  document.getElementById('entryDate').value = e.entry_date;
+  document.getElementById('entryTime').value = e.entry_time ? e.entry_time.slice(0, 5) : '';
+  document.getElementById('settingSelect').value = e.setting || '';
+  document.getElementById('durationInput').value = e.duration_minutes != null ? e.duration_minutes : '';
+  document.getElementById('notesInput').value = e.notes || '';
+  loggedByInput.value = e.logged_by || '';
+
+  selectedCategories = new Set(e.categories || []);
+  selectedSituations = new Set(e.situations || []);
+  renderCategoryChips();
+  renderSituationChips();
+
+  selectedIntensity = e.intensity || null;
+  intensityPicker.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('selected', parseInt(b.dataset.value, 10) === selectedIntensity);
+  });
+
+  entrySectionTitle.textContent = 'Edit entry';
+  submitBtn.textContent = 'Update entry';
+  cancelEditBtn.hidden = false;
+  formStatus.textContent = '';
+  formStatus.classList.remove('error');
+
+  if (form.scrollIntoView) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function endEditEntry() {
+  editingEntryId = null;
+  if (editRestoreLoggedBy !== null) {
+    loggedByInput.value = editRestoreLoggedBy;
+    editRestoreLoggedBy = null;
+  }
+  entrySectionTitle.textContent = 'New entry';
+  submitBtn.textContent = 'Log entry';
+  cancelEditBtn.hidden = true;
+}
+
+cancelEditBtn.addEventListener('click', () => {
+  endEditEntry();
+  selectedCategories = new Set();
+  selectedSituations = new Set();
+  selectedIntensity = null;
+  renderCategoryChips();
+  renderSituationChips();
+  intensityPicker.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+  document.getElementById('settingSelect').value = '';
+  document.getElementById('durationInput').value = '';
+  document.getElementById('notesInput').value = '';
+  document.getElementById('entryDate').value = todayStr();
+  document.getElementById('entryTime').value = nowStr();
+  formStatus.textContent = '';
+  formStatus.classList.remove('error');
+});
 
 filterSelect.addEventListener('change', renderEntries);
 
@@ -1096,10 +1177,12 @@ form.addEventListener('submit', async (ev) => {
     logged_by: loggedByInput.value.trim() || null,
   };
 
+  const isEditing = editingEntryId !== null;
+
   submitBtn.disabled = true;
   try {
-    const res = await fetch(`${API}/entries`, {
-      method: 'POST',
+    const res = await fetch(isEditing ? `${API}/entries/${editingEntryId}` : `${API}/entries`, {
+      method: isEditing ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
@@ -1116,8 +1199,16 @@ form.addEventListener('submit', async (ev) => {
     document.getElementById('notesInput').value = '';
     document.getElementById('entryTime').value = nowStr();
 
+    if (isEditing) {
+      // Finishing an edit clears the date back to today too, so the form
+      // doesn't linger on whatever past date was just edited for the next
+      // new entry.
+      document.getElementById('entryDate').value = todayStr();
+      endEditEntry();
+    }
+
     await loadEntries();
-    formStatus.textContent = 'Logged.';
+    formStatus.textContent = isEditing ? 'Updated.' : 'Logged.';
   } catch (err) {
     formStatus.textContent = 'Could not save — check your connection and try again.';
     formStatus.classList.add('error');
