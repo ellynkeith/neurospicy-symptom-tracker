@@ -263,6 +263,38 @@ def create_wetting_incident(incident: WettingIncidentIn, request: Request):
     return row
 
 
+@router.put("/api/wetting/{incident_id}")
+def update_wetting_incident(incident_id: int, incident: WettingIncidentIn, request: Request):
+    if is_demo(request):
+        updated = demo_store.update_wetting_incident(incident_id, incident)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        return updated
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE wetting_incidents
+                SET entry_date = %s, incident_time = %s, setting = %s, response = %s, notes = %s
+                WHERE id = %s
+                RETURNING *
+                """,
+                (
+                    incident.entry_date,
+                    incident.incident_time,
+                    incident.setting,
+                    incident.response,
+                    incident.notes,
+                    incident_id,
+                ),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return row
+
+
 @router.delete("/api/wetting/{incident_id}")
 def delete_wetting_incident(incident_id: int, request: Request):
     if is_demo(request):

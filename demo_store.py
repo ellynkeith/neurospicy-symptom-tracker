@@ -242,6 +242,18 @@ class DemoStore:
             self.wetting_incidents.append(row)
             return row
 
+    def update_wetting_incident(self, incident_id: int, incident: WettingIncidentIn):
+        with self._lock:
+            for row in self.wetting_incidents:
+                if row["id"] == incident_id:
+                    row["entry_date"] = incident.entry_date.isoformat()
+                    row["incident_time"] = incident.incident_time.isoformat() if incident.incident_time else None
+                    row["setting"] = incident.setting
+                    row["response"] = incident.response
+                    row["notes"] = incident.notes
+                    return row
+            return None
+
     def delete_wetting_incident(self, incident_id: int) -> bool:
         with self._lock:
             before = len(self.wetting_incidents)

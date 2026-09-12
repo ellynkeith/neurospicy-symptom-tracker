@@ -390,7 +390,7 @@
     </form>
   </section>
 
-  <details class="daily-details">
+  <details class="daily-details" id="dailyDetails">
     <summary>Daily context (sleep, exercise &amp; wetting incidents, optional)</summary>
     <form id="dailyForm">
       <div class="row">
@@ -467,6 +467,7 @@
           </select>
         </div>
         <div class="field">
+          <button type="button" class="link-btn" id="cancelWettingEditBtn" hidden>Cancel edit</button>
           <button type="button" class="primary" id="addWettingBtn">Add incident</button>
         </div>
       </div>
@@ -702,10 +703,55 @@ const wettingNotesInput = document.getElementById('wettingNotesInput');
 const wettingList = document.getElementById('wettingList');
 const wettingStatus = document.getElementById('wettingStatus');
 const addWettingBtn = document.getElementById('addWettingBtn');
+const cancelWettingEditBtn = document.getElementById('cancelWettingEditBtn');
+const dailyDetails = document.getElementById('dailyDetails');
+
+let editingWettingId = null;
+let editingWettingEntryDate = null;
 
 function fmtResponse(response) {
   return response === 'noncompliant' ? 'noncompliant' : response;
 }
+
+function startEditWetting(w) {
+  editingWettingId = w.id;
+  editingWettingEntryDate = w.entry_date;
+
+  dailyDetails.open = true;
+  if (dailyDateInput.value !== w.entry_date) {
+    dailyDateInput.value = w.entry_date;
+    renderWettingListForDate(w.entry_date);
+    populateDailyFormForDate(w.entry_date);
+  }
+
+  wettingTimeInput.value = w.incident_time ? w.incident_time.slice(0, 5) : '';
+  wettingSettingSelect.value = w.setting || '';
+  wettingResponseSelect.value = w.response || '';
+  wettingNotesInput.value = w.notes || '';
+
+  addWettingBtn.textContent = 'Update incident';
+  cancelWettingEditBtn.hidden = false;
+  wettingStatus.textContent = '';
+  wettingStatus.classList.remove('error');
+  if (dailyDetails.scrollIntoView) dailyDetails.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function endEditWetting() {
+  editingWettingId = null;
+  editingWettingEntryDate = null;
+  addWettingBtn.textContent = 'Add incident';
+  cancelWettingEditBtn.hidden = true;
+}
+
+cancelWettingEditBtn.addEventListener('click', () => {
+  endEditWetting();
+  wettingTimeInput.value = '';
+  wettingSettingSelect.value = '';
+  wettingResponseSelect.value = '';
+  wettingNotesInput.value = '';
+  wettingStatus.textContent = '';
+  wettingStatus.classList.remove('error');
+});
 
 function renderWettingListForDate(dateStr) {
   const incidents = (wettingByDate[dateStr] || []);
@@ -735,6 +781,12 @@ function renderWettingListForDate(dateStr) {
     setting.className = 'wetting-setting';
     setting.textContent = w.setting || '';
     head.appendChild(setting);
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'delete-btn';
+    editBtn.textContent = 'edit';
+    editBtn.addEventListener('click', () => startEditWetting(w));
+    head.appendChild(editBtn);
 
     const delBtn = document.createElement('button');
     delBtn.className = 'delete-btn';
@@ -783,8 +835,9 @@ addWettingBtn.addEventListener('click', async () => {
     return;
   }
 
+  const isEditingWetting = editingWettingId !== null;
   const payload = {
-    entry_date: dailyDateInput.value,
+    entry_date: isEditingWetting ? editingWettingEntryDate : dailyDateInput.value,
     incident_time: wettingTimeInput.value || null,
     setting: wettingSettingSelect.value || null,
     response: wettingResponseSelect.value,
@@ -793,8 +846,8 @@ addWettingBtn.addEventListener('click', async () => {
 
   addWettingBtn.disabled = true;
   try {
-    const res = await fetch(`${API}/wetting`, {
-      method: 'POST',
+    const res = await fetch(isEditingWetting ? `${API}/wetting/${editingWettingId}` : `${API}/wetting`, {
+      method: isEditingWetting ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
@@ -804,11 +857,12 @@ addWettingBtn.addEventListener('click', async () => {
     wettingSettingSelect.value = '';
     wettingResponseSelect.value = '';
     wettingNotesInput.value = '';
+    if (isEditingWetting) endEditWetting();
 
     await loadWettingIncidents();
     renderWettingListForDate(dailyDateInput.value);
     renderEntries();
-    wettingStatus.textContent = 'Added.';
+    wettingStatus.textContent = isEditingWetting ? 'Updated.' : 'Added.';
   } catch (err) {
     wettingStatus.textContent = 'Could not save — check your connection and try again.';
     wettingStatus.classList.add('error');
@@ -919,6 +973,11 @@ function renderEntries() {
 
       const wActions = document.createElement('span');
       wActions.className = 'entry-actions';
+      const wEditBtn = document.createElement('button');
+      wEditBtn.className = 'delete-btn';
+      wEditBtn.textContent = 'edit';
+      wEditBtn.addEventListener('click', () => startEditWetting(w));
+      wActions.appendChild(wEditBtn);
       const wDelBtn = document.createElement('button');
       wDelBtn.className = 'delete-btn';
       wDelBtn.textContent = 'delete';
