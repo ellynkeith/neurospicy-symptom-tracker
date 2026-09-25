@@ -148,3 +148,32 @@ class WettingIncidentIn(BaseModel):
         if cleaned not in ALLOWED_WETTING_RESPONSES:
             raise ValueError(f"response must be one of {sorted(ALLOWED_WETTING_RESPONSES)}")
         return cleaned
+
+
+class MedicationIn(BaseModel):
+    name: str
+
+
+class MedicationDoseIn(BaseModel):
+    """A single taken dose. Any number per day, mirroring wetting incidents.
+
+    Only taken doses get logged (no "skipped" entry), so a day with nothing
+    logged is ambiguous -- a missed dose looks identical to a day nobody
+    opened the app. Insights built on this data must treat no-dose-logged as
+    missing, not as skipped.
+    """
+    entry_date: date
+    taken_time: Optional[time] = None
+    # Free text, not an FK into medications -- dose lives in the name (e.g.
+    # "Methylphenidate 10mg"), so a dose change is a new medication rather
+    # than a rename, keeping history accurate.
+    medication: str
+    notes: Optional[str] = None
+
+    @field_validator("medication")
+    @classmethod
+    def medication_not_empty(cls, value: str) -> str:
+        cleaned = (value or "").strip().lower()
+        if not cleaned:
+            raise ValueError("medication is required")
+        return cleaned

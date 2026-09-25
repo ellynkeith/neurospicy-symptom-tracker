@@ -14,16 +14,18 @@ Live at [behavior-tracker-st8g.onrender.com](https://behavior-tracker-st8g.onren
 - [x] Multi-Category Tagging: tag one entry with more than one category at once (e.g. angry/irritable + argumentative/defiant)
 - [x] Situation/Demand Tagging: optionally tag what was going on right before (told no, a non-preferred task demand, sibling conflict, an unexpected change in plans, etc.) from a growable structured list, so situations can be clustered and compared instead of living in unstructured freeform text
 - [x] Rich Entry Detail: date, time, setting, duration, 1–5 intensity scale, freeform notes, and who logged it
-- [x] Editable Logging: update a behavior entry or wetting incident after the fact instead of deleting and relogging it
-- [x] Daily Context: separately track sleep (wake time, bedtime, time actually fell asleep, and night awakenings) and exercise (duration + cognitively-engaging vs. aerobic vs. other) once per day, plus wetting incidents (time, location, response — compliant/noncompliant/other — and optional details) any number of times per day, independent of how many behavior entries that day has — shows up alongside that day's entries when logged, including on days with no incidents at all
+- [x] Editable Logging: update a behavior entry, wetting incident, or medication dose after the fact instead of deleting and relogging it
+- [x] Daily Context: separately track sleep (wake time, bedtime, time actually fell asleep, and night awakenings) once per day, plus wetting incidents (time, location, response — compliant/noncompliant/other — and optional details) and medication doses (time, medication, optional details) any number of times per day, independent of how many behavior entries that day has — shows up alongside that day's entries when logged, including on days with no incidents at all
+- [x] Medication Tracking: log any number of doses per day from a growable list of medications, add-your-own on the fly like categories/situations — dose lives in the name (e.g. "Methylphenidate 10mg"), so a dose change is logged as a new medication rather than a rename, keeping history accurate. Logs taken doses only — a day with nothing logged means missing data, not a skipped dose
 - [x] Day-Grouped History: entries organized chronologically, newest first
 - [x] Category Filtering: narrow the log down to one category at a time
 - [x] CSV Export: pull the full log (or a filtered slice) for appointments or school meetings
 - [x] Shared Login: household-wide password gate so the log isn't wide open to the internet
 - [x] Demo Mode: a separate login serves sample data so anyone can see how it works without seeing (or risking) the real log
-- [ ] Data Insights: surface patterns over time — frequency by category, trends by setting or time of day, common situations/demands, correlations with sleep and exercise
+- [ ] Data Insights: surface patterns over time — frequency by category, trends by setting or time of day, common situations/demands, correlations with sleep and medication timing
 - [ ] Automated Backups: beyond the manual CSV export
 - [ ] Per-Person Accounts: currently one shared household login
+- [ ] Custom Trackers: user-defined trackers (day-level like sleep, or event-level like wetting/medications) with typed fields, so diagnosis-specific presets can ship their own tracked metrics
 
 ## Architecture ##
 Caregiver's Device → FastAPI Backend → Postgres (Neon) → Shared History Across All Devices

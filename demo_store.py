@@ -7,6 +7,7 @@ from models import (
     DEFAULT_SITUATIONS,
     DailyLogIn,
     EntryIn,
+    MedicationDoseIn,
     WettingIncidentIn,
 )
 
@@ -26,6 +27,9 @@ class DemoStore:
         self.entries = []
         self.daily_logs = {}
         self.wetting_incidents = []
+        # Generic names on purpose -- the demo dataset is public.
+        self.medications = ["am meds", "pm meds"]
+        self.medication_doses = []
         self._seed()
 
     def _next_id(self):
@@ -102,11 +106,11 @@ class DemoStore:
 
         seed_daily = [
             dict(days_ago=0, bedtime="21:00", fell_asleep_time="21:35", wake_time="07:00",
-                 night_awakenings=1, exercise_minutes=30, exercise_type="aerobic"),
+                 night_awakenings=1),
             dict(days_ago=1, bedtime="21:30", fell_asleep_time="21:40", wake_time="06:45",
-                 night_awakenings=0, exercise_minutes=20, exercise_type="cognitively-engaging"),
+                 night_awakenings=0),
             dict(days_ago=3, bedtime="22:15", fell_asleep_time=None, wake_time="07:15",
-                 night_awakenings=2, exercise_minutes=None, exercise_type=None),
+                 night_awakenings=2),
         ]
         for row in seed_daily:
             entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
@@ -116,8 +120,10 @@ class DemoStore:
                 "fell_asleep_time": row["fell_asleep_time"],
                 "wake_time": row["wake_time"],
                 "night_awakenings": row["night_awakenings"],
-                "exercise_minutes": row["exercise_minutes"],
-                "exercise_type": row["exercise_type"],
+                # No longer edited via the UI -- kept in the row shape since
+                # the real daily_logs table still has these columns.
+                "exercise_minutes": None,
+                "exercise_type": None,
             }
 
         seed_wetting = [
@@ -134,6 +140,23 @@ class DemoStore:
                     "incident_time": row["incident_time"],
                     "setting": row["setting"],
                     "response": row["response"],
+                    "notes": row["notes"],
+                }
+            )
+
+        seed_medication_doses = [
+            dict(days_ago=0, taken_time="08:00", medication="am meds", notes=None),
+            dict(days_ago=0, taken_time="15:30", medication="pm meds", notes=None),
+            dict(days_ago=1, taken_time="08:05", medication="am meds", notes="Slightly late, hard time waking up."),
+        ]
+        for row in seed_medication_doses:
+            entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
+            self.medication_doses.append(
+                {
+                    "id": self._next_id(),
+                    "entry_date": entry_date,
+                    "taken_time": row["taken_time"],
+                    "medication": row["medication"],
                     "notes": row["notes"],
                 }
             )
@@ -209,14 +232,20 @@ class DemoStore:
 
     def upsert_daily_log(self, log: DailyLogIn):
         with self._lock:
+            entry_date = log.entry_date.isoformat()
+            existing = self.daily_logs.get(entry_date)
             row = {
-                "entry_date": log.entry_date.isoformat(),
+                "entry_date": entry_date,
                 "bedtime": log.bedtime.isoformat() if log.bedtime else None,
                 "fell_asleep_time": log.fell_asleep_time.isoformat() if log.fell_asleep_time else None,
                 "wake_time": log.wake_time.isoformat() if log.wake_time else None,
                 "night_awakenings": log.night_awakenings,
-                "exercise_minutes": log.exercise_minutes,
-                "exercise_type": log.exercise_type,
+                # No longer edited via the UI -- preserve whatever's already
+                # stored instead of nulling it out on every sleep-only save.
+                "exercise_minutes": log.exercise_minutes if log.exercise_minutes is not None
+                    else (existing["exercise_minutes"] if existing else None),
+                "exercise_type": log.exercise_type if log.exercise_type is not None
+                    else (existing["exercise_type"] if existing else None),
             }
             self.daily_logs[row["entry_date"]] = row
             return row
@@ -259,6 +288,52 @@ class DemoStore:
             before = len(self.wetting_incidents)
             self.wetting_incidents = [w for w in self.wetting_incidents if w["id"] != incident_id]
             return len(self.wetting_incidents) != before
+
+    def list_medications(self):
+        with self._lock:
+            return sorted(self.medications)
+
+    def create_medication(self, name: str):
+        with self._lock:
+            if name not in self.medications:
+                self.medications.append(name)
+
+    def list_medication_doses(self):
+        with self._lock:
+            return sorted(
+                self.medication_doses,
+                key=lambda d: (d["entry_date"], d["taken_time"] or "", d["id"]),
+                reverse=True,
+            )
+
+    def create_medication_dose(self, dose: MedicationDoseIn):
+        with self._lock:
+            row = {
+                "id": self._next_id(),
+                "entry_date": dose.entry_date.isoformat(),
+                "taken_time": dose.taken_time.isoformat() if dose.taken_time else None,
+                "medication": dose.medication,
+                "notes": dose.notes,
+            }
+            self.medication_doses.append(row)
+            return row
+
+    def update_medication_dose(self, dose_id: int, dose: MedicationDoseIn):
+        with self._lock:
+            for row in self.medication_doses:
+                if row["id"] == dose_id:
+                    row["entry_date"] = dose.entry_date.isoformat()
+                    row["taken_time"] = dose.taken_time.isoformat() if dose.taken_time else None
+                    row["medication"] = dose.medication
+                    row["notes"] = dose.notes
+                    return row
+            return None
+
+    def delete_medication_dose(self, dose_id: int) -> bool:
+        with self._lock:
+            before = len(self.medication_doses)
+            self.medication_doses = [d for d in self.medication_doses if d["id"] != dose_id]
+            return len(self.medication_doses) != before
 
 
 demo_store = DemoStore()

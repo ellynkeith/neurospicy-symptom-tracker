@@ -104,6 +104,32 @@ def init_db():
             cur.execute(
                 "ALTER TABLE wetting_incidents ADD COLUMN IF NOT EXISTS notes TEXT"
             )
+            # Growable vocabulary, same shape as categories/situations --
+            # free text, no default seed data (unlike categories/situations,
+            # there's no sensible universal starter list for medications).
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS medications (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT UNIQUE NOT NULL
+                )
+                """
+            )
+            # Brand new table, same shape as wetting_incidents -- plain
+            # CREATE TABLE IF NOT EXISTS covers both a fresh install and an
+            # existing deployment.
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS medication_doses (
+                    id SERIAL PRIMARY KEY,
+                    entry_date DATE NOT NULL,
+                    taken_time TIME,
+                    medication TEXT NOT NULL,
+                    notes TEXT,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                )
+                """
+            )
             for cat in DEFAULT_CATEGORIES:
                 cur.execute(
                     "INSERT INTO categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",

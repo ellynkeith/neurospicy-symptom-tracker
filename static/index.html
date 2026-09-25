@@ -309,6 +309,27 @@
     padding: 4px 0 12px;
   }
   .wetting-add-row { align-items: flex-end; }
+
+  .medication-section {
+    border-top: 1px solid var(--line);
+    margin-top: 4px;
+    padding-top: 16px;
+  }
+  .medication-list { margin-bottom: 12px; }
+  .medication-item {
+    padding: 6px 0;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--paper-dim);
+  }
+  .medication-item:last-child { border-bottom: none; }
+  .medication-item-head { display: flex; align-items: center; gap: 10px; }
+  .medication-item-notes { font-size: 0.82rem; color: var(--ink-soft); margin-top: 4px; }
+  .medication-empty {
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+    font-style: italic;
+    padding: 4px 0 12px;
+  }
 </style>
 </head>
 <body>
@@ -391,7 +412,7 @@
   </section>
 
   <details class="daily-details" id="dailyDetails">
-    <summary>Daily context (sleep, exercise &amp; wetting incidents, optional)</summary>
+    <summary>Daily context (sleep, wetting incidents &amp; medications, optional)</summary>
     <form id="dailyForm">
       <div class="row">
         <div class="field">
@@ -415,21 +436,6 @@
         <div class="field">
           <label for="nightAwakeningsInput">Night awakenings</label>
           <input type="number" id="nightAwakeningsInput" min="0" step="1" placeholder="e.g. 1">
-        </div>
-      </div>
-      <div class="row">
-        <div class="field">
-          <label for="exerciseMinutesInput">Exercise (min)</label>
-          <input type="number" id="exerciseMinutesInput" min="0" step="1" placeholder="e.g. 30">
-        </div>
-        <div class="field">
-          <label for="exerciseTypeSelect">Exercise type</label>
-          <select id="exerciseTypeSelect">
-            <option value="">—</option>
-            <option value="cognitively-engaging">Cognitively engaging (martial arts, dance, strategy sport)</option>
-            <option value="aerobic">Aerobic (running, biking, swimming)</option>
-            <option value="other/mixed">Other / mixed</option>
-          </select>
         </div>
       </div>
       <div class="submit-row">
@@ -477,6 +483,30 @@
       </div>
       <div class="status" id="wettingStatus"></div>
     </div>
+
+    <div class="medication-section">
+      <div class="wetting-section-label">Medications for this date</div>
+      <div class="medication-list" id="medicationList"></div>
+      <div class="field">
+        <label>Medication</label>
+        <div class="chips" id="medicationChips"></div>
+      </div>
+      <div class="row wetting-add-row">
+        <div class="field">
+          <label for="medicationTimeInput">Time</label>
+          <input type="time" id="medicationTimeInput">
+        </div>
+        <div class="field">
+          <button type="button" class="link-btn" id="cancelMedicationEditBtn" hidden>Cancel edit</button>
+          <button type="button" class="primary" id="addMedicationBtn">Add dose</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="medicationNotesInput">Additional details (optional)</label>
+        <textarea id="medicationNotesInput" placeholder="Anything else worth remembering"></textarea>
+      </div>
+      <div class="status" id="medicationStatus"></div>
+    </div>
   </details>
 
   <section>
@@ -502,6 +532,9 @@ let dailyLogs = [];
 let dailyLogMap = {};
 let wettingIncidents = [];
 let wettingByDate = {};
+let medications = [];
+let medicationDoses = [];
+let medicationsByDate = {};
 
 function todayStr() {
   // Deliberately NOT toISOString() -- that formats in UTC, so anyone west
@@ -632,20 +665,18 @@ async function loadSituations() {
   renderSituationChips();
 }
 
-// ---- daily context (sleep + exercise, one row per date, independent of
-// how many behavior entries exist that day) ----
+// ---- daily context (sleep, one row per date, independent of how many
+// behavior entries exist that day) ----
 const dailyDateInput = document.getElementById('dailyDate');
 const wakeTimeInput = document.getElementById('wakeTimeInput');
 const bedtimeInput = document.getElementById('bedtimeInput');
 const fellAsleepInput = document.getElementById('fellAsleepInput');
 const nightAwakeningsInput = document.getElementById('nightAwakeningsInput');
-const exerciseMinutesInput = document.getElementById('exerciseMinutesInput');
-const exerciseTypeSelect = document.getElementById('exerciseTypeSelect');
 
 function hasDailyContent(log) {
   return !!log && (
     log.wake_time != null || log.bedtime != null || log.fell_asleep_time != null ||
-    log.night_awakenings != null || log.exercise_minutes != null || !!log.exercise_type
+    log.night_awakenings != null
   );
 }
 
@@ -663,12 +694,6 @@ function fmtDailySummary(log) {
     }
     parts.push(sleepPart);
   }
-  if (log.exercise_minutes != null || log.exercise_type) {
-    let exPart = 'Exercise';
-    if (log.exercise_minutes != null) exPart += ` ${log.exercise_minutes} min`;
-    if (log.exercise_type) exPart += ` (${log.exercise_type})`;
-    parts.push(exPart);
-  }
   return parts.join('   ·   ');
 }
 
@@ -678,13 +703,12 @@ function populateDailyFormForDate(dateStr) {
   bedtimeInput.value = log && log.bedtime ? log.bedtime.slice(0, 5) : '';
   fellAsleepInput.value = log && log.fell_asleep_time ? log.fell_asleep_time.slice(0, 5) : '';
   nightAwakeningsInput.value = (log && log.night_awakenings != null) ? log.night_awakenings : '';
-  exerciseMinutesInput.value = (log && log.exercise_minutes != null) ? log.exercise_minutes : '';
-  exerciseTypeSelect.value = (log && log.exercise_type) ? log.exercise_type : '';
 }
 
 dailyDateInput.addEventListener('change', () => {
   populateDailyFormForDate(dailyDateInput.value);
   renderWettingListForDate(dailyDateInput.value);
+  renderMedicationListForDate(dailyDateInput.value);
 });
 
 async function loadDailyLogs() {
@@ -695,7 +719,7 @@ async function loadDailyLogs() {
 }
 
 // ---- wetting incidents (any number per date, unlike the single-value
-// sleep/exercise fields above -- each incident is its own row) ----
+// sleep fields above -- each incident is its own row) ----
 const wettingTimeInput = document.getElementById('wettingTimeInput');
 const wettingSettingSelect = document.getElementById('wettingSettingSelect');
 const wettingResponseSelect = document.getElementById('wettingResponseSelect');
@@ -871,6 +895,211 @@ addWettingBtn.addEventListener('click', async () => {
   }
 });
 
+// ---- medications (growable vocabulary like categories/situations, doses
+// are event-level like wetting incidents -- any number per date, single
+// medication per dose) ----
+const medicationChips = document.getElementById('medicationChips');
+let selectedMedication = null;
+
+function renderMedicationChips() {
+  medicationChips.innerHTML = '';
+  medications.forEach(med => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (selectedMedication === med ? ' selected' : '');
+    chip.textContent = med;
+    chip.addEventListener('click', () => {
+      selectedMedication = (selectedMedication === med) ? null : med;
+      renderMedicationChips();
+    });
+    medicationChips.appendChild(chip);
+  });
+  const addChip = document.createElement('div');
+  addChip.className = 'chip add-new';
+  addChip.textContent = '+ new';
+  addChip.addEventListener('click', async () => {
+    const name = prompt('New medication name (dose can go right in the name, e.g. "Methylphenidate 10mg"):');
+    if (!name || !name.trim()) return;
+    await fetch(`${API}/medications`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() })
+    });
+    await loadMedications();
+    selectedMedication = name.trim().toLowerCase();
+    renderMedicationChips();
+  });
+  medicationChips.appendChild(addChip);
+}
+
+async function loadMedications() {
+  const res = await fetch(`${API}/medications`);
+  medications = await res.json();
+  renderMedicationChips();
+}
+
+const medicationTimeInput = document.getElementById('medicationTimeInput');
+const medicationNotesInput = document.getElementById('medicationNotesInput');
+const medicationList = document.getElementById('medicationList');
+const medicationStatus = document.getElementById('medicationStatus');
+const addMedicationBtn = document.getElementById('addMedicationBtn');
+const cancelMedicationEditBtn = document.getElementById('cancelMedicationEditBtn');
+
+let editingMedicationId = null;
+let editingMedicationEntryDate = null;
+
+function startEditMedication(d) {
+  editingMedicationId = d.id;
+  editingMedicationEntryDate = d.entry_date;
+
+  dailyDetails.open = true;
+  if (dailyDateInput.value !== d.entry_date) {
+    dailyDateInput.value = d.entry_date;
+    renderWettingListForDate(d.entry_date);
+    renderMedicationListForDate(d.entry_date);
+    populateDailyFormForDate(d.entry_date);
+  }
+
+  medicationTimeInput.value = d.taken_time ? d.taken_time.slice(0, 5) : '';
+  selectedMedication = d.medication;
+  renderMedicationChips();
+  medicationNotesInput.value = d.notes || '';
+
+  addMedicationBtn.textContent = 'Update dose';
+  cancelMedicationEditBtn.hidden = false;
+  medicationStatus.textContent = '';
+  medicationStatus.classList.remove('error');
+  if (dailyDetails.scrollIntoView) dailyDetails.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function endEditMedication() {
+  editingMedicationId = null;
+  editingMedicationEntryDate = null;
+  addMedicationBtn.textContent = 'Add dose';
+  cancelMedicationEditBtn.hidden = true;
+}
+
+cancelMedicationEditBtn.addEventListener('click', () => {
+  endEditMedication();
+  medicationTimeInput.value = '';
+  selectedMedication = null;
+  renderMedicationChips();
+  medicationNotesInput.value = '';
+  medicationStatus.textContent = '';
+  medicationStatus.classList.remove('error');
+});
+
+function renderMedicationListForDate(dateStr) {
+  const doses = (medicationsByDate[dateStr] || []);
+  medicationList.innerHTML = '';
+  if (!doses.length) {
+    medicationList.innerHTML = '<div class="medication-empty">No medications logged for this date.</div>';
+    return;
+  }
+  doses.forEach(d => {
+    const item = document.createElement('div');
+    item.className = 'medication-item';
+
+    const head = document.createElement('div');
+    head.className = 'medication-item-head';
+
+    const time = document.createElement('div');
+    time.className = 'entry-time';
+    time.textContent = fmtTime(d.taken_time);
+    head.appendChild(time);
+
+    const nameBadge = document.createElement('span');
+    nameBadge.className = 'badge';
+    nameBadge.textContent = d.medication;
+    head.appendChild(nameBadge);
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'delete-btn';
+    editBtn.textContent = 'edit';
+    editBtn.addEventListener('click', () => startEditMedication(d));
+    head.appendChild(editBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'delete-btn';
+    delBtn.textContent = 'delete';
+    delBtn.addEventListener('click', () => deleteMedicationDose(d.id));
+    head.appendChild(delBtn);
+
+    item.appendChild(head);
+
+    if (d.notes) {
+      const notes = document.createElement('div');
+      notes.className = 'medication-item-notes';
+      notes.textContent = d.notes;
+      item.appendChild(notes);
+    }
+
+    medicationList.appendChild(item);
+  });
+}
+
+async function loadMedicationDoses() {
+  const res = await fetch(`${API}/medication-doses`);
+  medicationDoses = await res.json();
+  medicationsByDate = {};
+  medicationDoses.forEach(d => {
+    if (!medicationsByDate[d.entry_date]) medicationsByDate[d.entry_date] = [];
+    medicationsByDate[d.entry_date].push(d);
+  });
+}
+
+async function deleteMedicationDose(id) {
+  if (!confirm('Delete this dose?')) return;
+  await fetch(`${API}/medication-doses/${id}`, { method: 'DELETE' });
+  await loadMedicationDoses();
+  renderMedicationListForDate(dailyDateInput.value);
+  renderEntries();
+}
+
+addMedicationBtn.addEventListener('click', async () => {
+  medicationStatus.textContent = '';
+  medicationStatus.classList.remove('error');
+
+  if (!selectedMedication) {
+    medicationStatus.textContent = 'Pick a medication.';
+    medicationStatus.classList.add('error');
+    return;
+  }
+
+  const isEditingMedication = editingMedicationId !== null;
+  const payload = {
+    entry_date: isEditingMedication ? editingMedicationEntryDate : dailyDateInput.value,
+    taken_time: medicationTimeInput.value || null,
+    medication: selectedMedication,
+    notes: medicationNotesInput.value || null,
+  };
+
+  addMedicationBtn.disabled = true;
+  try {
+    const res = await fetch(isEditingMedication ? `${API}/medication-doses/${editingMedicationId}` : `${API}/medication-doses`, {
+      method: isEditingMedication ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    medicationTimeInput.value = '';
+    selectedMedication = null;
+    renderMedicationChips();
+    medicationNotesInput.value = '';
+    if (isEditingMedication) endEditMedication();
+
+    await loadMedicationDoses();
+    renderMedicationListForDate(dailyDateInput.value);
+    renderEntries();
+    medicationStatus.textContent = isEditingMedication ? 'Updated.' : 'Added.';
+  } catch (err) {
+    medicationStatus.textContent = 'Could not save — check your connection and try again.';
+    medicationStatus.classList.add('error');
+  } finally {
+    addMedicationBtn.disabled = false;
+  }
+});
+
 // ---- intensity picker ----
 let selectedIntensity = null;
 const intensityPicker = document.getElementById('intensityPicker');
@@ -912,14 +1141,17 @@ function renderEntries() {
   });
 
   // With no category filter active, also surface days that only have daily
-  // context (sleep/exercise) logged and zero behavior entries -- a quiet
-  // day is itself useful signal for spotting patterns. Skip this when a
-  // filter is active since the point of filtering is to narrow to entries.
+  // context (sleep) logged and zero behavior entries -- a quiet day is
+  // itself useful signal for spotting patterns. Skip this when a filter is
+  // active since the point of filtering is to narrow to entries.
   if (!filter) {
     dailyLogs.forEach(log => {
       if (!groups[log.entry_date]) groups[log.entry_date] = [];
     });
     Object.keys(wettingByDate).forEach(dateStr => {
+      if (!groups[dateStr]) groups[dateStr] = [];
+    });
+    Object.keys(medicationsByDate).forEach(dateStr => {
       if (!groups[dateStr]) groups[dateStr] = [];
     });
   }
@@ -1003,6 +1235,57 @@ function renderEntries() {
 
       wRow.appendChild(wBody);
       group.appendChild(wRow);
+    });
+
+    (medicationsByDate[dateStr] || []).forEach(d => {
+      const dRow = document.createElement('div');
+      dRow.className = 'entry';
+
+      const dTime = document.createElement('div');
+      dTime.className = 'entry-time';
+      dTime.textContent = fmtTime(d.taken_time);
+      dRow.appendChild(dTime);
+
+      const dBody = document.createElement('div');
+      dBody.className = 'entry-body';
+      const dHead = document.createElement('div');
+      dHead.className = 'entry-head';
+
+      const dLabel = document.createElement('span');
+      dLabel.className = 'badge';
+      dLabel.textContent = 'Medication';
+      dHead.appendChild(dLabel);
+
+      const dNameBadge = document.createElement('span');
+      dNameBadge.className = 'badge';
+      dNameBadge.textContent = d.medication;
+      dHead.appendChild(dNameBadge);
+
+      const dActions = document.createElement('span');
+      dActions.className = 'entry-actions';
+      const dEditBtn = document.createElement('button');
+      dEditBtn.className = 'delete-btn';
+      dEditBtn.textContent = 'edit';
+      dEditBtn.addEventListener('click', () => startEditMedication(d));
+      dActions.appendChild(dEditBtn);
+      const dDelBtn = document.createElement('button');
+      dDelBtn.className = 'delete-btn';
+      dDelBtn.textContent = 'delete';
+      dDelBtn.addEventListener('click', () => deleteMedicationDose(d.id));
+      dActions.appendChild(dDelBtn);
+      dHead.appendChild(dActions);
+
+      dBody.appendChild(dHead);
+
+      if (d.notes) {
+        const dNotes = document.createElement('div');
+        dNotes.className = 'entry-notes';
+        dNotes.textContent = d.notes;
+        dBody.appendChild(dNotes);
+      }
+
+      dRow.appendChild(dBody);
+      group.appendChild(dRow);
     });
 
     if (!groups[dateStr].length) {
@@ -1292,8 +1575,6 @@ dailyForm.addEventListener('submit', async (ev) => {
     bedtime: bedtimeInput.value || null,
     fell_asleep_time: fellAsleepInput.value || null,
     night_awakenings: nightAwakeningsInput.value ? parseInt(nightAwakeningsInput.value, 10) : null,
-    exercise_minutes: exerciseMinutesInput.value ? parseInt(exerciseMinutesInput.value, 10) : null,
-    exercise_type: exerciseTypeSelect.value || null,
   };
 
   dailySubmitBtn.disabled = true;
@@ -1331,10 +1612,13 @@ async function loadWhoami() {
   await loadWhoami();
   await loadCategories();
   await loadSituations();
+  await loadMedications();
   await loadDailyLogs();
   populateDailyFormForDate(dailyDateInput.value);
   await loadWettingIncidents();
   renderWettingListForDate(dailyDateInput.value);
+  await loadMedicationDoses();
+  renderMedicationListForDate(dailyDateInput.value);
   await loadEntries();
 })();
 </script>

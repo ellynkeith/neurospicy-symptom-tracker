@@ -4,7 +4,15 @@ from fastapi import APIRouter, HTTPException, Request
 from auth import is_demo
 from db import DATABASE_URL, get_conn
 from demo_store import demo_store
-from models import CategoryIn, DailyLogIn, EntryIn, SituationIn, WettingIncidentIn
+from models import (
+    CategoryIn,
+    DailyLogIn,
+    EntryIn,
+    MedicationDoseIn,
+    MedicationIn,
+    SituationIn,
+    WettingIncidentIn,
+)
 
 router = APIRouter()
 
@@ -204,8 +212,12 @@ def upsert_daily_log(log: DailyLogIn, request: Request):
                     fell_asleep_time = EXCLUDED.fell_asleep_time,
                     wake_time = EXCLUDED.wake_time,
                     night_awakenings = EXCLUDED.night_awakenings,
-                    exercise_minutes = EXCLUDED.exercise_minutes,
-                    exercise_type = EXCLUDED.exercise_type
+                    -- Exercise is no longer edited via the UI (removed
+                    -- 2026-09-25) and the daily form no longer sends it, so
+                    -- preserve whatever's already stored instead of nulling
+                    -- it out on every sleep-only save.
+                    exercise_minutes = COALESCE(EXCLUDED.exercise_minutes, daily_logs.exercise_minutes),
+                    exercise_type = COALESCE(EXCLUDED.exercise_type, daily_logs.exercise_type)
                 RETURNING *
                 """,
                 (
@@ -309,3 +321,118 @@ def delete_wetting_incident(incident_id: int, request: Request):
     if not deleted:
         raise HTTPException(status_code=404, detail="Incident not found")
     return {"deleted": incident_id}
+
+
+@router.get("/api/medications")
+def list_medications(request: Request):
+    if is_demo(request):
+        return demo_store.list_medications()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT name FROM medications ORDER BY name")
+            rows = cur.fetchall()
+    return [r[0] for r in rows]
+
+
+@router.post("/api/medications")
+def create_medication(medication: MedicationIn, request: Request):
+    name = medication.name.strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="Medication name cannot be empty")
+    if is_demo(request):
+        demo_store.create_medication(name)
+        return {"name": name}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO medications (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+                (name,),
+            )
+        conn.commit()
+    return {"name": name}
+
+
+@router.get("/api/medication-doses")
+def list_medication_doses(request: Request):
+    if is_demo(request):
+        return demo_store.list_medication_doses()
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM medication_doses "
+                "ORDER BY entry_date DESC, taken_time DESC NULLS LAST, id DESC"
+            )
+            rows = cur.fetchall()
+    return rows
+
+
+@router.post("/api/medication-doses")
+def create_medication_dose(dose: MedicationDoseIn, request: Request):
+    if is_demo(request):
+        return demo_store.create_medication_dose(dose)
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO medication_doses
+                    (entry_date, taken_time, medication, notes)
+                VALUES (%s, %s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    dose.entry_date,
+                    dose.taken_time,
+                    dose.medication,
+                    dose.notes,
+                ),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    return row
+
+
+@router.put("/api/medication-doses/{dose_id}")
+def update_medication_dose(dose_id: int, dose: MedicationDoseIn, request: Request):
+    if is_demo(request):
+        updated = demo_store.update_medication_dose(dose_id, dose)
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Dose not found")
+        return updated
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE medication_doses
+                SET entry_date = %s, taken_time = %s, medication = %s, notes = %s
+                WHERE id = %s
+                RETURNING *
+                """,
+                (
+                    dose.entry_date,
+                    dose.taken_time,
+                    dose.medication,
+                    dose.notes,
+                    dose_id,
+                ),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Dose not found")
+    return row
+
+
+@router.delete("/api/medication-doses/{dose_id}")
+def delete_medication_dose(dose_id: int, request: Request):
+    if is_demo(request):
+        if not demo_store.delete_medication_dose(dose_id):
+            raise HTTPException(status_code=404, detail="Dose not found")
+        return {"deleted": dose_id}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM medication_doses WHERE id = %s", (dose_id,))
+            deleted = cur.rowcount
+        conn.commit()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Dose not found")
+    return {"deleted": dose_id}
