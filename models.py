@@ -100,6 +100,29 @@ class DailyLogIn(BaseModel):
     night_awakenings: Optional[int] = None
     exercise_minutes: Optional[int] = None
     exercise_type: Optional[str] = None
+    # Day-level outcome. good_day: True = explicitly a good/quiet day;
+    # None = not answered (never means "bad day"). day_rating is 1-5 and can
+    # be set on any day.
+    good_day: Optional[bool] = None
+    day_rating: Optional[int] = None
+    day_notes: Optional[str] = None
+
+    @field_validator("good_day")
+    @classmethod
+    def good_day_true_or_none(cls, value: Optional[bool]) -> Optional[bool]:
+        return True if value else None
+
+    @field_validator("day_rating")
+    @classmethod
+    def valid_day_rating(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and not 1 <= value <= 5:
+            raise ValueError("day_rating must be between 1 and 5")
+        return value
+
+    @field_validator("day_notes")
+    @classmethod
+    def blank_notes_to_none(cls, value: Optional[str]) -> Optional[str]:
+        return value if value and value.strip() else None
 
     @field_validator("night_awakenings", "exercise_minutes")
     @classmethod

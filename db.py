@@ -64,6 +64,14 @@ def init_db():
             cur.execute(
                 "ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS fell_asleep_time TIME"
             )
+            # Day-level outcome (added 2026-09-28). good_day is an explicit
+            # "reviewed, nothing worth logging" marker so a quiet day is
+            # distinguishable from a day nobody opened the app -- NULL means
+            # not answered, never "bad day". day_rating (1-5) and day_notes
+            # can be filled in on any day, good or not. All nullable/additive.
+            cur.execute("ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS good_day BOOLEAN")
+            cur.execute("ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS day_rating INTEGER")
+            cur.execute("ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS day_notes TEXT")
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS entries (

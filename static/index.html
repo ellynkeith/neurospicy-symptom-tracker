@@ -274,6 +274,7 @@
     color: var(--ink-soft);
     margin: -2px 0 10px;
   }
+  .daily-summary-notes { margin: -6px 0 10px; }
   .day-empty {
     color: var(--ink-soft);
     font-size: 0.85rem;
@@ -413,13 +414,33 @@
   </section>
 
   <details class="daily-details" id="dailyDetails">
-    <summary>Daily context (sleep, wetting incidents &amp; medications, optional)</summary>
+    <summary>Daily context (how the day went, sleep, wetting incidents &amp; medications, optional)</summary>
     <form id="dailyForm">
       <div class="row">
         <div class="field">
           <label for="dailyDate">Date</label>
           <input type="date" id="dailyDate">
         </div>
+      </div>
+      <div class="field">
+        <label>How was the day?</label>
+        <div class="chips">
+          <div class="chip" id="goodDayChip" role="button" aria-pressed="false">Had a good day</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>Overall (optional, 1 = rough · 5 = great)</label>
+        <div class="intensity" id="dayRatingPicker">
+          <button type="button" data-value="1">1</button>
+          <button type="button" data-value="2">2</button>
+          <button type="button" data-value="3">3</button>
+          <button type="button" data-value="4">4</button>
+          <button type="button" data-value="5">5</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="dayNotesInput">Comments on the day (optional)</label>
+        <textarea id="dayNotesInput" placeholder="What made it a good (or hard) day?"></textarea>
       </div>
       <div class="row">
         <div class="field">
@@ -673,16 +694,48 @@ const wakeTimeInput = document.getElementById('wakeTimeInput');
 const bedtimeInput = document.getElementById('bedtimeInput');
 const fellAsleepInput = document.getElementById('fellAsleepInput');
 const nightAwakeningsInput = document.getElementById('nightAwakeningsInput');
+const goodDayChip = document.getElementById('goodDayChip');
+const dayRatingPicker = document.getElementById('dayRatingPicker');
+const dayNotesInput = document.getElementById('dayNotesInput');
+
+// ---- day-level outcome: "had a good day" marker + optional 1-5 rating ----
+let goodDay = false;
+let selectedDayRating = null;
+
+function renderGoodDayChip() {
+  goodDayChip.classList.toggle('selected', goodDay);
+  goodDayChip.setAttribute('aria-pressed', goodDay ? 'true' : 'false');
+}
+goodDayChip.addEventListener('click', () => { goodDay = !goodDay; renderGoodDayChip(); });
+
+function renderDayRating() {
+  dayRatingPicker.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('selected', parseInt(b.dataset.value, 10) === selectedDayRating);
+  });
+}
+dayRatingPicker.querySelectorAll('button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const v = parseInt(btn.dataset.value, 10);
+    selectedDayRating = (selectedDayRating === v) ? null : v;
+    renderDayRating();
+  });
+});
 
 function hasDailyContent(log) {
   return !!log && (
     log.wake_time != null || log.bedtime != null || log.fell_asleep_time != null ||
-    log.night_awakenings != null
+    log.night_awakenings != null || log.good_day || log.day_rating != null || !!log.day_notes
   );
 }
 
 function fmtDailySummary(log) {
   const parts = [];
+  if (log.good_day || log.day_rating != null) {
+    const dayParts = [];
+    if (log.good_day) dayParts.push('Good day');
+    if (log.day_rating != null) dayParts.push(`Overall ${log.day_rating}/5`);
+    parts.push(dayParts.join(' · '));
+  }
   if (log.wake_time || log.bedtime || log.fell_asleep_time || log.night_awakenings != null) {
     let sleepPart = (log.wake_time || log.bedtime)
       ? `Woke ${log.wake_time ? fmtTime(log.wake_time) : '?'} · Bed ${log.bedtime ? fmtTime(log.bedtime) : '?'}`
@@ -704,6 +757,11 @@ function populateDailyFormForDate(dateStr) {
   bedtimeInput.value = log && log.bedtime ? log.bedtime.slice(0, 5) : '';
   fellAsleepInput.value = log && log.fell_asleep_time ? log.fell_asleep_time.slice(0, 5) : '';
   nightAwakeningsInput.value = (log && log.night_awakenings != null) ? log.night_awakenings : '';
+  goodDay = !!(log && log.good_day);
+  renderGoodDayChip();
+  selectedDayRating = (log && log.day_rating != null) ? log.day_rating : null;
+  renderDayRating();
+  dayNotesInput.value = (log && log.day_notes) ? log.day_notes : '';
 }
 
 dailyDateInput.addEventListener('change', () => {
@@ -1183,6 +1241,12 @@ function renderEntries() {
       summary.className = 'daily-summary';
       summary.textContent = fmtDailySummary(dailyLog);
       group.appendChild(summary);
+      if (dailyLog.day_notes) {
+        const dayNotes = document.createElement('div');
+        dayNotes.className = 'entry-notes daily-summary-notes';
+        dayNotes.textContent = dailyLog.day_notes;
+        group.appendChild(dayNotes);
+      }
     }
 
     (wettingByDate[dateStr] || []).forEach(w => {
@@ -1583,6 +1647,9 @@ dailyForm.addEventListener('submit', async (ev) => {
     bedtime: bedtimeInput.value || null,
     fell_asleep_time: fellAsleepInput.value || null,
     night_awakenings: nightAwakeningsInput.value ? parseInt(nightAwakeningsInput.value, 10) : null,
+    good_day: goodDay || null,
+    day_rating: selectedDayRating,
+    day_notes: dayNotesInput.value.trim() || null,
   };
 
   dailySubmitBtn.disabled = true;

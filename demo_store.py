@@ -111,6 +111,9 @@ class DemoStore:
                  night_awakenings=0),
             dict(days_ago=3, bedtime="22:15", fell_asleep_time=None, wake_time="07:15",
                  night_awakenings=2),
+            dict(days_ago=4, bedtime=None, fell_asleep_time=None, wake_time=None,
+                 night_awakenings=None, good_day=True, day_rating=5,
+                 day_notes="Easy morning, great at the park."),
         ]
         for row in seed_daily:
             entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
@@ -120,6 +123,9 @@ class DemoStore:
                 "fell_asleep_time": row["fell_asleep_time"],
                 "wake_time": row["wake_time"],
                 "night_awakenings": row["night_awakenings"],
+                "good_day": row.get("good_day"),
+                "day_rating": row.get("day_rating"),
+                "day_notes": row.get("day_notes"),
                 # No longer edited via the UI -- kept in the row shape since
                 # the real daily_logs table still has these columns.
                 "exercise_minutes": None,
@@ -240,6 +246,9 @@ class DemoStore:
                 "fell_asleep_time": log.fell_asleep_time.isoformat() if log.fell_asleep_time else None,
                 "wake_time": log.wake_time.isoformat() if log.wake_time else None,
                 "night_awakenings": log.night_awakenings,
+                "good_day": log.good_day,
+                "day_rating": log.day_rating,
+                "day_notes": log.day_notes,
                 # No longer edited via the UI -- preserve whatever's already
                 # stored instead of nulling it out on every sleep-only save.
                 "exercise_minutes": log.exercise_minutes if log.exercise_minutes is not None

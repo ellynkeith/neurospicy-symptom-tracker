@@ -205,9 +205,12 @@ def upsert_daily_log(log: DailyLogIn, request: Request):
                 """
                 INSERT INTO daily_logs
                     (entry_date, bedtime, fell_asleep_time, wake_time, night_awakenings,
-                     exercise_minutes, exercise_type)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                     exercise_minutes, exercise_type, good_day, day_rating, day_notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (entry_date) DO UPDATE SET
+                    good_day = EXCLUDED.good_day,
+                    day_rating = EXCLUDED.day_rating,
+                    day_notes = EXCLUDED.day_notes,
                     bedtime = EXCLUDED.bedtime,
                     fell_asleep_time = EXCLUDED.fell_asleep_time,
                     wake_time = EXCLUDED.wake_time,
@@ -228,6 +231,9 @@ def upsert_daily_log(log: DailyLogIn, request: Request):
                     log.night_awakenings,
                     log.exercise_minutes,
                     log.exercise_type,
+                    log.good_day,
+                    log.day_rating,
+                    log.day_notes,
                 ),
             )
             row = cur.fetchone()
