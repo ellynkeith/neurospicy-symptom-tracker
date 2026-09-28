@@ -19,7 +19,8 @@ Live at [behavior-tracker-st8g.onrender.com](https://behavior-tracker-st8g.onren
 - [x] Medication Tracking: log any number of doses per day from a growable list of medications — pick several in one entry when they're taken together — add-your-own on the fly like categories/situations — dose lives in the name (e.g. "Methylphenidate 10mg"), so a dose change is logged as a new medication rather than a rename, keeping history accurate. Meds no longer in use can be hidden from the picker without deleting them or their history. Logs taken doses only — a day with nothing logged means missing data, not a skipped dose
 - [x] Day-Grouped History: entries organized chronologically, newest first, in collapsible months (and past years) so the log stays scannable as it grows
 - [x] Category Filtering: narrow the log down to one category at a time
-- [x] CSV Export: pull the full log (or a filtered slice) for appointments or school meetings
+- [x] CSV Export: pull the behavior log (or a filtered slice) for appointments or school meetings
+- [x] Full Data Export: one click downloads a zip with a tidy CSV per table (behavior entries, daily context, wetting incidents, medication doses) — opens in Excel, loads straight into pandas, and doubles as a manual backup (also available at `GET /api/export`)
 - [x] Shared Login: household-wide password gate so the log isn't wide open to the internet
 - [x] Demo Mode: a separate login serves sample data so anyone can see how it works without seeing (or risking) the real log
 - [ ] Data Insights: surface patterns over time — frequency by category, trends by setting or time of day, common situations/demands, correlations with sleep and medication timing

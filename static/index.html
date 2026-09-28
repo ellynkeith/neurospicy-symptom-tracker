@@ -573,7 +573,8 @@
         <select id="filterSelect">
           <option value="">All categories</option>
         </select>
-        <button class="link-btn" id="exportBtn">Export CSV</button>
+        <button class="link-btn" id="exportBtn" title="Behavior entries only, respects the category filter">Export entries CSV</button>
+        <button class="link-btn" id="exportAllBtn" title="Every table as its own CSV, zipped">Export all data</button>
       </div>
     </div>
     <div id="entriesList"></div>
@@ -1735,6 +1736,18 @@ document.getElementById('exportBtn').addEventListener('click', () => {
   a.download = `behavior-log-${todayStr()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+});
+
+// ---- export all data (zip of one CSV per table, built server-side) ----
+document.getElementById('exportAllBtn').addEventListener('click', () => {
+  const a = document.createElement('a');
+  // Pass the browser's local date so the filename isn't stamped with the
+  // server's UTC date (tomorrow, in the evening).
+  a.href = `${API}/export?date=${todayStr()}`;
+  a.download = `behavior-tracker-export-${todayStr()}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 });
 
 // ---- form submit ----

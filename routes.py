@@ -1,5 +1,12 @@
+import csv
+import io
+import re
+import zipfile
+from typing import Optional
+
 import psycopg2.extras
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import Response
 
 from auth import is_demo
 from db import DATABASE_URL, get_conn
@@ -467,3 +474,97 @@ def delete_medication_dose(dose_id: int, request: Request):
     if not deleted:
         raise HTTPException(status_code=404, detail="Dose not found")
     return {"deleted": dose_id}
+
+
+# ---------------------------------------------------------------------------
+# Full export: one tidy CSV per table, zipped. Explicit column lists (rather
+# than SELECT *) keep the column order stable across schema changes. Array
+# columns are joined with "; ", same as the behavior-only CSV in the UI.
+# ---------------------------------------------------------------------------
+EXPORT_TABLES = {
+    "entries.csv": (
+        "entries",
+        ["id", "entry_date", "entry_time", "categories", "setting", "duration_minutes",
+         "intensity", "situations", "notes", "logged_by", "created_at"],
+        "entry_date, entry_time NULLS LAST, id",
+    ),
+    "daily.csv": (
+        "daily_logs",
+        ["entry_date", "good_day", "day_rating", "day_notes", "wake_time", "bedtime",
+         "fell_asleep_time", "night_awakenings", "exercise_minutes", "exercise_type"],
+        "entry_date",
+    ),
+    "wetting_incidents.csv": (
+        "wetting_incidents",
+        ["id", "entry_date", "incident_time", "setting", "response", "notes", "created_at"],
+        "entry_date, incident_time NULLS LAST, id",
+    ),
+    "medication_doses.csv": (
+        "medication_doses",
+        ["id", "entry_date", "taken_time", "medications", "notes", "created_at"],
+        "entry_date, taken_time NULLS LAST, id",
+    ),
+}
+
+
+def _csv_value(value):
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        return "; ".join(str(v) for v in value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _to_csv(columns, rows) -> bytes:
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow([_csv_value(row.get(c)) for c in columns])
+    # utf-8-sig (BOM) so Excel reads non-ASCII in notes correctly; pandas
+    # strips the BOM automatically.
+    return buf.getvalue().encode("utf-8-sig")
+
+
+def _demo_export_rows(filename):
+    key = lambda r, t: (r["entry_date"], r.get(t) or "99", r.get("id", 0))
+    if filename == "entries.csv":
+        return sorted(demo_store.list_entries(), key=lambda r: key(r, "entry_time"))
+    if filename == "daily.csv":
+        return sorted(demo_store.list_daily_logs(), key=lambda r: r["entry_date"])
+    if filename == "wetting_incidents.csv":
+        return sorted(demo_store.list_wetting_incidents(), key=lambda r: key(r, "incident_time"))
+    return sorted(demo_store.list_medication_doses(), key=lambda r: key(r, "taken_time"))
+
+
+@router.get("/api/export")
+def export_all(request: Request, date: Optional[str] = None):
+    # The browser passes its local date for the filename -- the server runs
+    # in UTC, which would stamp evening exports with tomorrow's date.
+    if date is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    zip_name = f"behavior-tracker-export-{date}.zip" if date else "behavior-tracker-export.zip"
+    tables = {}
+    if is_demo(request):
+        for filename, (_, columns, _) in EXPORT_TABLES.items():
+            tables[filename] = (columns, _demo_export_rows(filename))
+    else:
+        with get_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                for filename, (table, columns, order_by) in EXPORT_TABLES.items():
+                    # Table/column names come from the constant above, never
+                    # from the request, so string-building here is safe.
+                    cur.execute(f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_by}")
+                    tables[filename] = (columns, cur.fetchall())
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for filename, (columns, rows) in tables.items():
+            zf.writestr(filename, _to_csv(columns, rows))
+    return Response(
+        content=zip_buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
+    )
