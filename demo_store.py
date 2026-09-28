@@ -28,7 +28,7 @@ class DemoStore:
         self.daily_logs = {}
         self.wetting_incidents = []
         # Generic names on purpose -- the demo dataset is public.
-        self.medications = ["am meds", "pm meds"]
+        self.medications = ["am meds", "pm meds", "vitamin d"]
         self.medication_doses = []
         self._seed()
 
@@ -145,9 +145,9 @@ class DemoStore:
             )
 
         seed_medication_doses = [
-            dict(days_ago=0, taken_time="08:00", medication="am meds", notes=None),
-            dict(days_ago=0, taken_time="15:30", medication="pm meds", notes=None),
-            dict(days_ago=1, taken_time="08:05", medication="am meds", notes="Slightly late, hard time waking up."),
+            dict(days_ago=0, taken_time="08:00", medications=["am meds", "vitamin d"], notes=None),
+            dict(days_ago=0, taken_time="15:30", medications=["pm meds"], notes=None),
+            dict(days_ago=1, taken_time="08:05", medications=["am meds"], notes="Slightly late, hard time waking up."),
         ]
         for row in seed_medication_doses:
             entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
@@ -156,7 +156,7 @@ class DemoStore:
                     "id": self._next_id(),
                     "entry_date": entry_date,
                     "taken_time": row["taken_time"],
-                    "medication": row["medication"],
+                    "medications": list(row["medications"]),
                     "notes": row["notes"],
                 }
             )
@@ -312,7 +312,7 @@ class DemoStore:
                 "id": self._next_id(),
                 "entry_date": dose.entry_date.isoformat(),
                 "taken_time": dose.taken_time.isoformat() if dose.taken_time else None,
-                "medication": dose.medication,
+                "medications": list(dose.medications),
                 "notes": dose.notes,
             }
             self.medication_doses.append(row)
@@ -324,7 +324,7 @@ class DemoStore:
                 if row["id"] == dose_id:
                     row["entry_date"] = dose.entry_date.isoformat()
                     row["taken_time"] = dose.taken_time.isoformat() if dose.taken_time else None
-                    row["medication"] = dose.medication
+                    row["medications"] = list(dose.medications)
                     row["notes"] = dose.notes
                     return row
             return None

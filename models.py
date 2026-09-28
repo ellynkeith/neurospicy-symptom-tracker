@@ -155,7 +155,8 @@ class MedicationIn(BaseModel):
 
 
 class MedicationDoseIn(BaseModel):
-    """A single taken dose. Any number per day, mirroring wetting incidents.
+    """A taken dose of one or more medications at the same time. Any number
+    per day, mirroring wetting incidents.
 
     Only taken doses get logged (no "skipped" entry), so a day with nothing
     logged is ambiguous -- a missed dose looks identical to a day nobody
@@ -167,13 +168,14 @@ class MedicationDoseIn(BaseModel):
     # Free text, not an FK into medications -- dose lives in the name (e.g.
     # "Methylphenidate 10mg"), so a dose change is a new medication rather
     # than a rename, keeping history accurate.
-    medication: str
+    # One or more, for meds taken together at the same time.
+    medications: List[str]
     notes: Optional[str] = None
 
-    @field_validator("medication")
+    @field_validator("medications")
     @classmethod
-    def medication_not_empty(cls, value: str) -> str:
-        cleaned = (value or "").strip().lower()
-        if not cleaned:
-            raise ValueError("medication is required")
-        return cleaned
+    def clean_medications(cls, value: List[str]) -> List[str]:
+        deduped = _clean_tag_list(value)
+        if not deduped:
+            raise ValueError("At least one medication is required")
+        return deduped

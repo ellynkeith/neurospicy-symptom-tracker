@@ -124,12 +124,37 @@ def init_db():
                     id SERIAL PRIMARY KEY,
                     entry_date DATE NOT NULL,
                     taken_time TIME,
-                    medication TEXT NOT NULL,
+                    medications TEXT[] NOT NULL DEFAULT '{}',
                     notes TEXT,
                     created_at TIMESTAMPTZ DEFAULT now()
                 )
                 """
             )
+            # One-off migration (added 2026-09-28): doses originally held a
+            # single `medication TEXT`; they now hold `medications TEXT[]` so
+            # meds taken together are one entry. Folds each existing value into
+            # a one-element array, then drops the old column. Only fires while
+            # the old column still exists, so it's a no-op on fresh installs
+            # and on every restart after the first. Safe to delete once the
+            # live deployment has run it.
+            cur.execute(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'medication_doses'
+                  AND column_name = 'medication'
+                """
+            )
+            if cur.fetchone():
+                cur.execute(
+                    "ALTER TABLE medication_doses "
+                    "ADD COLUMN IF NOT EXISTS medications TEXT[] NOT NULL DEFAULT '{}'"
+                )
+                cur.execute(
+                    "UPDATE medication_doses SET medications = ARRAY[medication] "
+                    "WHERE medications = '{}' AND medication IS NOT NULL"
+                )
+                cur.execute("ALTER TABLE medication_doses DROP COLUMN medication")
             for cat in DEFAULT_CATEGORIES:
                 cur.execute(
                     "INSERT INTO categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",

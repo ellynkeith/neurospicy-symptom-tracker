@@ -375,14 +375,14 @@ def create_medication_dose(dose: MedicationDoseIn, request: Request):
             cur.execute(
                 """
                 INSERT INTO medication_doses
-                    (entry_date, taken_time, medication, notes)
+                    (entry_date, taken_time, medications, notes)
                 VALUES (%s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
                     dose.entry_date,
                     dose.taken_time,
-                    dose.medication,
+                    dose.medications,
                     dose.notes,
                 ),
             )
@@ -403,14 +403,14 @@ def update_medication_dose(dose_id: int, dose: MedicationDoseIn, request: Reques
             cur.execute(
                 """
                 UPDATE medication_doses
-                SET entry_date = %s, taken_time = %s, medication = %s, notes = %s
+                SET entry_date = %s, taken_time = %s, medications = %s, notes = %s
                 WHERE id = %s
                 RETURNING *
                 """,
                 (
                     dose.entry_date,
                     dose.taken_time,
-                    dose.medication,
+                    dose.medications,
                     dose.notes,
                     dose_id,
                 ),

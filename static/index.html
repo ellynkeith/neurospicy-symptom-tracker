@@ -322,7 +322,8 @@
     border-bottom: 1px solid var(--paper-dim);
   }
   .medication-item:last-child { border-bottom: none; }
-  .medication-item-head { display: flex; align-items: center; gap: 10px; }
+  .medication-item-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+  .medication-item-head .badge { white-space: nowrap; }
   .medication-item-notes { font-size: 0.82rem; color: var(--ink-soft); margin-top: 4px; }
   .medication-empty {
     color: var(--ink-soft);
@@ -488,7 +489,7 @@
       <div class="wetting-section-label">Medications for this date</div>
       <div class="medication-list" id="medicationList"></div>
       <div class="field">
-        <label>Medication</label>
+        <label>Medication(s)</label>
         <div class="chips" id="medicationChips"></div>
       </div>
       <div class="row wetting-add-row">
@@ -896,19 +897,21 @@ addWettingBtn.addEventListener('click', async () => {
 });
 
 // ---- medications (growable vocabulary like categories/situations, doses
-// are event-level like wetting incidents -- any number per date, single
-// medication per dose) ----
+// are event-level like wetting incidents -- any number per date, one or more
+// medications per dose for meds taken together) ----
 const medicationChips = document.getElementById('medicationChips');
-let selectedMedication = null;
+let selectedMedications = [];
 
 function renderMedicationChips() {
   medicationChips.innerHTML = '';
   medications.forEach(med => {
     const chip = document.createElement('div');
-    chip.className = 'chip' + (selectedMedication === med ? ' selected' : '');
+    chip.className = 'chip' + (selectedMedications.includes(med) ? ' selected' : '');
     chip.textContent = med;
     chip.addEventListener('click', () => {
-      selectedMedication = (selectedMedication === med) ? null : med;
+      selectedMedications = selectedMedications.includes(med)
+        ? selectedMedications.filter(m => m !== med)
+        : [...selectedMedications, med];
       renderMedicationChips();
     });
     medicationChips.appendChild(chip);
@@ -925,7 +928,8 @@ function renderMedicationChips() {
       body: JSON.stringify({ name: name.trim() })
     });
     await loadMedications();
-    selectedMedication = name.trim().toLowerCase();
+    const newName = name.trim().toLowerCase();
+    if (!selectedMedications.includes(newName)) selectedMedications = [...selectedMedications, newName];
     renderMedicationChips();
   });
   medicationChips.appendChild(addChip);
@@ -960,7 +964,7 @@ function startEditMedication(d) {
   }
 
   medicationTimeInput.value = d.taken_time ? d.taken_time.slice(0, 5) : '';
-  selectedMedication = d.medication;
+  selectedMedications = [...(d.medications || [])];
   renderMedicationChips();
   medicationNotesInput.value = d.notes || '';
 
@@ -981,7 +985,7 @@ function endEditMedication() {
 cancelMedicationEditBtn.addEventListener('click', () => {
   endEditMedication();
   medicationTimeInput.value = '';
-  selectedMedication = null;
+  selectedMedications = [];
   renderMedicationChips();
   medicationNotesInput.value = '';
   medicationStatus.textContent = '';
@@ -1007,10 +1011,12 @@ function renderMedicationListForDate(dateStr) {
     time.textContent = fmtTime(d.taken_time);
     head.appendChild(time);
 
-    const nameBadge = document.createElement('span');
-    nameBadge.className = 'badge';
-    nameBadge.textContent = d.medication;
-    head.appendChild(nameBadge);
+    (d.medications || []).forEach(med => {
+      const nameBadge = document.createElement('span');
+      nameBadge.className = 'badge';
+      nameBadge.textContent = med;
+      head.appendChild(nameBadge);
+    });
 
     const editBtn = document.createElement('button');
     editBtn.className = 'delete-btn';
@@ -1059,8 +1065,8 @@ addMedicationBtn.addEventListener('click', async () => {
   medicationStatus.textContent = '';
   medicationStatus.classList.remove('error');
 
-  if (!selectedMedication) {
-    medicationStatus.textContent = 'Pick a medication.';
+  if (!selectedMedications.length) {
+    medicationStatus.textContent = 'Pick at least one medication.';
     medicationStatus.classList.add('error');
     return;
   }
@@ -1069,7 +1075,7 @@ addMedicationBtn.addEventListener('click', async () => {
   const payload = {
     entry_date: isEditingMedication ? editingMedicationEntryDate : dailyDateInput.value,
     taken_time: medicationTimeInput.value || null,
-    medication: selectedMedication,
+    medications: selectedMedications,
     notes: medicationNotesInput.value || null,
   };
 
@@ -1083,7 +1089,7 @@ addMedicationBtn.addEventListener('click', async () => {
     if (!res.ok) throw new Error(await res.text());
 
     medicationTimeInput.value = '';
-    selectedMedication = null;
+    selectedMedications = [];
     renderMedicationChips();
     medicationNotesInput.value = '';
     if (isEditingMedication) endEditMedication();
@@ -1256,10 +1262,12 @@ function renderEntries() {
       dLabel.textContent = 'Medication';
       dHead.appendChild(dLabel);
 
-      const dNameBadge = document.createElement('span');
-      dNameBadge.className = 'badge';
-      dNameBadge.textContent = d.medication;
-      dHead.appendChild(dNameBadge);
+      (d.medications || []).forEach(med => {
+        const dNameBadge = document.createElement('span');
+        dNameBadge.className = 'badge';
+        dNameBadge.textContent = med;
+        dHead.appendChild(dNameBadge);
+      });
 
       const dActions = document.createElement('span');
       dActions.className = 'entry-actions';
