@@ -123,6 +123,11 @@ def init_db():
                 )
                 """
             )
+            # Hide-without-deleting (added 2026-09-28): a med no longer in use
+            # drops out of the picker but stays on its historical doses.
+            cur.execute(
+                "ALTER TABLE medications ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true"
+            )
             # Brand new table, same shape as wetting_incidents -- plain
             # CREATE TABLE IF NOT EXISTS covers both a fresh install and an
             # existing deployment.

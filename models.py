@@ -177,6 +177,13 @@ class MedicationIn(BaseModel):
     name: str
 
 
+class MedicationVisibilityIn(BaseModel):
+    """Hide/unhide a medication in the picker. Hidden meds are never
+    deleted -- their historical doses keep rendering as normal."""
+    name: str
+    active: bool
+
+
 class MedicationDoseIn(BaseModel):
     """A taken dose of one or more medications at the same time. Any number
     per day, mirroring wetting incidents.

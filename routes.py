@@ -10,6 +10,7 @@ from models import (
     EntryIn,
     MedicationDoseIn,
     MedicationIn,
+    MedicationVisibilityIn,
     SituationIn,
     WettingIncidentIn,
 )
@@ -335,9 +336,9 @@ def list_medications(request: Request):
         return demo_store.list_medications()
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT name FROM medications ORDER BY name")
+            cur.execute("SELECT name, active FROM medications ORDER BY name")
             rows = cur.fetchall()
-    return [r[0] for r in rows]
+    return [{"name": r[0], "active": r[1]} for r in rows]
 
 
 @router.post("/api/medications")
@@ -351,11 +352,35 @@ def create_medication(medication: MedicationIn, request: Request):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO medications (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+                # Re-adding a hidden med via "+ new" un-hides it.
+                "INSERT INTO medications (name) VALUES (%s) "
+                "ON CONFLICT (name) DO UPDATE SET active = true",
                 (name,),
             )
         conn.commit()
     return {"name": name}
+
+
+# Body rather than a path param: med names can contain "/" (e.g.
+# "l-theanine/magnesium"), which would break a /api/medications/{name} route.
+@router.post("/api/medications/visibility")
+def set_medication_visibility(body: MedicationVisibilityIn, request: Request):
+    name = body.name.strip().lower()
+    if is_demo(request):
+        if not demo_store.set_medication_active(name, body.active):
+            raise HTTPException(status_code=404, detail="Medication not found")
+        return {"name": name, "active": body.active}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE medications SET active = %s WHERE name = %s",
+                (body.active, name),
+            )
+            updated = cur.rowcount
+        conn.commit()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Medication not found")
+    return {"name": name, "active": body.active}
 
 
 @router.get("/api/medication-doses")

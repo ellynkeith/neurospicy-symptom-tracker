@@ -166,6 +166,29 @@
   }
 
   .day-group { margin-bottom: 28px; }
+  details.period > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 14px;
+  }
+  details.period > summary::-webkit-details-marker { display: none; }
+  details.period > summary::before {
+    content: '▸';
+    color: var(--ink-soft);
+    font-size: 0.8rem;
+    width: 0.8rem;
+  }
+  details.period[open] > summary::before { content: '▾'; }
+  .period-title { font-family: 'Lora', Georgia, serif; font-size: 1.1rem; color: var(--ink); }
+  details.period.year > summary .period-title { font-size: 1.25rem; }
+  .period-meta { font-size: 0.8rem; color: var(--ink-soft); }
+  details.period:not([open]) > summary { margin-bottom: 4px; }
+  details.period.year > .period-body { padding-left: 14px; }
   .day-heading {
     font-size: 0.95rem;
     font-weight: 600;
@@ -325,6 +348,16 @@
   .medication-item:last-child { border-bottom: none; }
   .medication-item-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
   .medication-item-head .badge { white-space: nowrap; }
+  .chip.hidden-med { border-style: dashed; color: var(--ink-soft); }
+  .chip.hidden-med.selected { color: #fff; }
+  .manage-meds-btn { margin-top: 8px; padding: 0; }
+  .manage-meds { margin-top: 8px; border: 1px solid var(--line); border-radius: 3px; padding: 4px 12px; background: #fff; }
+  .manage-meds-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; font-size: 0.88rem; border-bottom: 1px solid var(--paper-dim);
+  }
+  .manage-meds-row:last-child { border-bottom: none; }
+  .manage-meds-row.is-hidden span { color: var(--ink-soft); text-decoration: line-through; }
   .medication-item-notes { font-size: 0.82rem; color: var(--ink-soft); margin-top: 4px; }
   .medication-empty {
     color: var(--ink-soft);
@@ -512,6 +545,8 @@
       <div class="field">
         <label>Medication(s)</label>
         <div class="chips" id="medicationChips"></div>
+        <button type="button" class="link-btn manage-meds-btn" id="manageMedsBtn">Hide or show medications</button>
+        <div class="manage-meds" id="manageMedsPanel" hidden></div>
       </div>
       <div class="row wetting-add-row">
         <div class="field">
@@ -962,10 +997,14 @@ let selectedMedications = [];
 
 function renderMedicationChips() {
   medicationChips.innerHTML = '';
-  medications.forEach(med => {
+  // Active meds only -- plus any hidden med already on the dose being
+  // edited, so re-saving an old dose never silently drops it.
+  const visible = medications.filter(m => m.active || selectedMedications.includes(m.name));
+  visible.forEach(m => {
+    const med = m.name;
     const chip = document.createElement('div');
-    chip.className = 'chip' + (selectedMedications.includes(med) ? ' selected' : '');
-    chip.textContent = med;
+    chip.className = 'chip' + (selectedMedications.includes(med) ? ' selected' : '') + (m.active ? '' : ' hidden-med');
+    chip.textContent = m.active ? med : `${med} (hidden)`;
     chip.addEventListener('click', () => {
       selectedMedications = selectedMedications.includes(med)
         ? selectedMedications.filter(m => m !== med)
@@ -995,9 +1034,51 @@ function renderMedicationChips() {
 
 async function loadMedications() {
   const res = await fetch(`${API}/medications`);
-  medications = await res.json();
+  medications = await res.json();  // [{name, active}]
   renderMedicationChips();
+  if (!manageMedsPanel.hidden) renderManageMeds();
 }
+
+// ---- hide/show medications (never deletes -- hidden meds stay on their
+// historical doses, they just drop out of the picker) ----
+const manageMedsBtn = document.getElementById('manageMedsBtn');
+const manageMedsPanel = document.getElementById('manageMedsPanel');
+
+function renderManageMeds() {
+  manageMedsPanel.innerHTML = '';
+  if (!medications.length) {
+    manageMedsPanel.innerHTML = '<div class="medication-empty">No medications yet.</div>';
+    return;
+  }
+  medications.forEach(m => {
+    const row = document.createElement('div');
+    row.className = 'manage-meds-row' + (m.active ? '' : ' is-hidden');
+    const name = document.createElement('span');
+    name.textContent = m.name;
+    row.appendChild(name);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'link-btn';
+    btn.textContent = m.active ? 'hide' : 'show';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      await fetch(`${API}/medications/visibility`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: m.name, active: !m.active })
+      });
+      await loadMedications();
+    });
+    row.appendChild(btn);
+    manageMedsPanel.appendChild(row);
+  });
+}
+
+manageMedsBtn.addEventListener('click', () => {
+  manageMedsPanel.hidden = !manageMedsPanel.hidden;
+  manageMedsBtn.textContent = manageMedsPanel.hidden ? 'Hide or show medications' : 'Done';
+  if (!manageMedsPanel.hidden) renderManageMeds();
+});
 
 const medicationTimeInput = document.getElementById('medicationTimeInput');
 const medicationNotesInput = document.getElementById('medicationNotesInput');
@@ -1227,6 +1308,8 @@ function renderEntries() {
     return;
   }
 
+  const periods = makePeriodContainers();
+
   dateKeys.sort((a, b) => b.localeCompare(a)).forEach(dateStr => {
     const group = document.createElement('div');
     group.className = 'day-group';
@@ -1445,8 +1528,82 @@ function renderEntries() {
       group.appendChild(row);
     });
 
-    entriesList.appendChild(group);
+    periods.add(dateStr, group, groups[dateStr].length);
   });
+  periods.finish();
+}
+
+// ---- month/year collapsing for the entries list ----
+// Days nest inside a collapsible month; months from past years nest inside
+// a collapsible year. A month stays open if it holds any day from the last
+// RECENT_DAYS days (so on the 1st, last month doesn't vanish), everything
+// older starts collapsed. Once someone opens or closes a month/year by
+// hand, that choice sticks across re-renders (every save re-renders).
+const RECENT_DAYS = 14;
+const periodOpenState = {};  // period key ('2026-09' or '2025') -> bool
+
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function makePeriodContainers() {
+  const now = new Date();
+  const currentYear = String(now.getFullYear());
+  const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - RECENT_DAYS);
+  const cutoffMonth = localDateStr(cutoff).slice(0, 7);
+  const years = {};
+  const months = {};
+
+  function makePeriod(key, label, kind, defaultOpen, parent) {
+    const details = document.createElement('details');
+    details.className = `period ${kind}`;
+    details.open = (key in periodOpenState) ? periodOpenState[key] : defaultOpen;
+    const summary = document.createElement('summary');
+    const title = document.createElement('span');
+    title.className = 'period-title';
+    title.textContent = label;
+    const meta = document.createElement('span');
+    meta.className = 'period-meta';
+    summary.appendChild(title);
+    summary.appendChild(meta);
+    details.appendChild(summary);
+    const body = document.createElement('div');
+    body.className = 'period-body';
+    details.appendChild(body);
+    details.addEventListener('toggle', () => { periodOpenState[key] = details.open; });
+    parent.appendChild(details);
+    return { details, body, meta, days: 0, entries: 0 };
+  }
+
+  function add(dateStr, dayEl, entryCount) {
+    const y = dateStr.slice(0, 4);
+    const ym = dateStr.slice(0, 7);
+    if (!months[ym]) {
+      let parent = entriesList;
+      if (y !== currentYear) {
+        if (!years[y]) years[y] = makePeriod(y, y, 'year', ym >= cutoffMonth, entriesList);
+        parent = years[y].body;
+      }
+      const label = new Date(`${ym}-01T00:00:00`).toLocaleDateString(undefined,
+        y === currentYear ? { month: 'long' } : { month: 'long', year: 'numeric' });
+      months[ym] = makePeriod(ym, y === currentYear ? `${label} ${y}` : label, 'month', ym >= cutoffMonth, parent);
+    }
+    months[ym].body.appendChild(dayEl);
+    months[ym].days += 1;
+    months[ym].entries += entryCount;
+    if (years[y]) { years[y].days += 1; years[y].entries += entryCount; }
+  }
+
+  function fmtMeta(p) {
+    return `${p.days} day${p.days === 1 ? '' : 's'} · ${p.entries} entr${p.entries === 1 ? 'y' : 'ies'}`;
+  }
+
+  function finish() {
+    Object.values(months).forEach(p => { p.meta.textContent = fmtMeta(p); });
+    Object.values(years).forEach(p => { p.meta.textContent = fmtMeta(p); });
+  }
+
+  return { add, finish };
 }
 
 async function loadEntries() {

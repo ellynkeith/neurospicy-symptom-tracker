@@ -28,7 +28,8 @@ class DemoStore:
         self.daily_logs = {}
         self.wetting_incidents = []
         # Generic names on purpose -- the demo dataset is public.
-        self.medications = ["am meds", "pm meds", "vitamin d"]
+        # name -> active. "old am meds" is hidden, to show off hide/unhide.
+        self.medications = {"am meds": True, "pm meds": True, "vitamin d": True, "old am meds": False}
         self.medication_doses = []
         self._seed()
 
@@ -79,6 +80,18 @@ class DemoStore:
                 duration_minutes=25, intensity=2, situations=["non-preferred task demand"],
                 notes="Drifted off task repeatedly during independent seatwork, needed several redirects to finish the worksheet.",
                 logged_by="Demo Teacher",
+            ),
+            dict(
+                days_ago=45, entry_time="16:10", categories=["angry/irritable"], setting="home",
+                duration_minutes=10, intensity=2, situations=["asked to transition off preferred activity"],
+                notes="Upset about turning off a game for dinner; calmed down with a five-minute warning next time.",
+                logged_by="Demo Parent",
+            ),
+            dict(
+                days_ago=380, entry_time="10:30", categories=["impulsive"], setting="public",
+                duration_minutes=5, intensity=2, situations=["waiting/turn-taking"],
+                notes="Cut the line at the library story time; an older entry, to show how past years collapse.",
+                logged_by="Demo Parent",
             ),
             dict(
                 days_ago=5, entry_time="17:40", categories=["vindictive"], setting="home",
@@ -300,12 +313,19 @@ class DemoStore:
 
     def list_medications(self):
         with self._lock:
-            return sorted(self.medications)
+            return [{"name": n, "active": a} for n, a in sorted(self.medications.items())]
 
     def create_medication(self, name: str):
         with self._lock:
+            # Re-adding a hidden med un-hides it.
+            self.medications[name] = True
+
+    def set_medication_active(self, name: str, active: bool) -> bool:
+        with self._lock:
             if name not in self.medications:
-                self.medications.append(name)
+                return False
+            self.medications[name] = active
+            return True
 
     def list_medication_doses(self):
         with self._lock:
