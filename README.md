@@ -33,8 +33,9 @@ Caregiver's Device → FastAPI Backend → Postgres (Neon) → Shared History Ac
 
 ## Tech Stack ##
 ### Backend
-- FastAPI
-- Uvicorn
+- Python 3.12
+- FastAPI (web framework) with Pydantic (request validation)
+- Uvicorn (ASGI server)
 
 ### Database
 - PostgreSQL, hosted on Neon (serverless, free tier)
@@ -44,6 +45,6 @@ Caregiver's Device → FastAPI Backend → Postgres (Neon) → Shared History Ac
 - Render (free web service)
 - Neon (free Postgres)
 
-**Frontend**
-* HTML/CSS (warm, non-clinical styling — paper background, serif headings, no cards or shadows)
-* Vanilla JavaScript, no build step
+### Frontend
+- HTML/CSS (warm, non-clinical styling — paper background, serif headings, no cards or shadows)
+- Vanilla JavaScript, no build step
