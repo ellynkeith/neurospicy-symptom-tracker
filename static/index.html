@@ -171,7 +171,7 @@
     cursor: pointer;
     display: flex;
     align-items: baseline;
-    gap: 12px;
+    gap: 10px;
     padding: 10px 0;
     border-bottom: 1px solid var(--line);
     margin-bottom: 14px;
@@ -180,8 +180,10 @@
   details.period > summary::before {
     content: '▸';
     color: var(--ink-soft);
-    font-size: 0.8rem;
-    width: 0.8rem;
+    font-size: 1.25rem;
+    line-height: 1;
+    width: 1rem;
+    align-self: center;
   }
   details.period[open] > summary::before { content: '▾'; }
   .period-title { font-family: 'Lora', Georgia, serif; font-size: 1.1rem; color: var(--ink); }
