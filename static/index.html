@@ -351,6 +351,21 @@
   .medication-item-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
   .medication-item-head .badge { white-space: nowrap; }
   .chip.hidden-med { border-style: dashed; color: var(--ink-soft); }
+  .med-copy {
+    margin: 0 0 14px; padding: 8px 12px;
+    border: 1px dashed var(--line); border-radius: 3px;
+  }
+  .med-copy-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 0.82rem; color: var(--ink-soft); margin-bottom: 4px;
+  }
+  .med-copy-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+    padding: 5px 0; font-size: 0.85rem; border-top: 1px solid var(--paper-dim);
+  }
+  .med-copy-row .badge { white-space: nowrap; }
+  .med-copy-row .link-btn, .med-copy-done { margin-left: auto; }
+  .med-copy-done { font-size: 0.8rem; color: var(--ink-soft); font-style: italic; }
   .chip.hidden-med.selected { color: #fff; }
   .manage-meds-btn { margin-top: 8px; padding: 0; }
   .manage-meds { margin-top: 8px; border: 1px solid var(--line); border-radius: 3px; padding: 4px 12px; background: #fff; }
@@ -544,6 +559,7 @@
     <div class="medication-section">
       <div class="wetting-section-label">Medications for this date</div>
       <div class="medication-list" id="medicationList"></div>
+      <div class="med-copy" id="medCopyPanel" hidden></div>
       <div class="field">
         <label>Medication(s)</label>
         <div class="chips" id="medicationChips"></div>
@@ -803,6 +819,8 @@ function populateDailyFormForDate(dateStr) {
 }
 
 dailyDateInput.addEventListener('change', () => {
+  medicationStatus.textContent = '';
+  medicationStatus.classList.remove('error');
   populateDailyFormForDate(dailyDateInput.value);
   renderWettingListForDate(dailyDateInput.value);
   renderMedicationListForDate(dailyDateInput.value);
@@ -1135,7 +1153,10 @@ cancelMedicationEditBtn.addEventListener('click', () => {
 });
 
 function renderMedicationListForDate(dateStr) {
-  const doses = (medicationsByDate[dateStr] || []);
+  renderMedCopyPanel(dateStr);
+  // Earliest first, matching the day's order in the Entries list.
+  const doses = [...(medicationsByDate[dateStr] || [])]
+    .sort((a, b) => (a.taken_time || '99').localeCompare(b.taken_time || '99'));
   medicationList.innerHTML = '';
   if (!doses.length) {
     medicationList.innerHTML = '<div class="medication-empty">No medications logged for this date.</div>';
@@ -1183,6 +1204,118 @@ function renderMedicationListForDate(dateStr) {
 
     medicationList.appendChild(item);
   });
+}
+
+// ---- "same as previous day": copy doses from the most recent earlier day
+// that has any, one at a time or all at once. Copies medications and time,
+// not notes (those are about that specific day). A source dose counts as
+// already logged if the target day has a dose sharing any of its meds. ----
+const medCopyPanel = document.getElementById('medCopyPanel');
+
+function prevDateStr(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() - 1);
+  return localDateStr(d);
+}
+
+function doseAlreadyLogged(src, targetDoses) {
+  return targetDoses.some(t => (t.medications || []).some(m => (src.medications || []).includes(m)));
+}
+
+async function copyDoses(sources, dateStr) {
+  for (const src of sources) {
+    const res = await fetch(`${API}/medication-doses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entry_date: dateStr,
+        taken_time: src.taken_time || null,
+        medications: src.medications,
+        notes: null,
+      })
+    });
+    if (!res.ok) throw new Error(await res.text());
+  }
+}
+
+function renderMedCopyPanel(dateStr) {
+  medCopyPanel.innerHTML = '';
+  medCopyPanel.hidden = true;
+  if (!dateStr) return;
+  const sourceDate = Object.keys(medicationsByDate)
+    .filter(d => d < dateStr && (medicationsByDate[d] || []).length)
+    .sort()
+    .pop();
+  if (!sourceDate) return;
+
+  const targetDoses = medicationsByDate[dateStr] || [];
+  const sources = [...medicationsByDate[sourceDate]]
+    .sort((a, b) => (a.taken_time || '99').localeCompare(b.taken_time || '99'));
+  const missing = sources.filter(s => !doseAlreadyLogged(s, targetDoses));
+  if (!missing.length) return;  // everything from that day is already here
+
+  const label = sourceDate === prevDateStr(dateStr)
+    ? 'the previous day'
+    : new Date(sourceDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
+  const head = document.createElement('div');
+  head.className = 'med-copy-head';
+  const title = document.createElement('span');
+  title.textContent = `Same as ${label}?`;
+  head.appendChild(title);
+  const allBtn = document.createElement('button');
+  allBtn.type = 'button';
+  allBtn.className = 'link-btn';
+  allBtn.textContent = missing.length === sources.length ? 'Add all' : `Add remaining ${missing.length}`;
+  allBtn.addEventListener('click', () => runCopy(missing, dateStr, allBtn));
+  head.appendChild(allBtn);
+  medCopyPanel.appendChild(head);
+
+  sources.forEach(src => {
+    const row = document.createElement('div');
+    row.className = 'med-copy-row';
+    const time = document.createElement('div');
+    time.className = 'entry-time';
+    time.textContent = fmtTime(src.taken_time);
+    row.appendChild(time);
+    (src.medications || []).forEach(med => {
+      const b = document.createElement('span');
+      b.className = 'badge';
+      b.textContent = med;
+      row.appendChild(b);
+    });
+    if (doseAlreadyLogged(src, targetDoses)) {
+      const done = document.createElement('span');
+      done.className = 'med-copy-done';
+      done.textContent = 'already logged';
+      row.appendChild(done);
+    } else {
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'link-btn';
+      addBtn.textContent = 'add';
+      addBtn.addEventListener('click', () => runCopy([src], dateStr, addBtn));
+      row.appendChild(addBtn);
+    }
+    medCopyPanel.appendChild(row);
+  });
+  medCopyPanel.hidden = false;
+}
+
+async function runCopy(sources, dateStr, btn) {
+  btn.disabled = true;
+  medicationStatus.textContent = '';
+  medicationStatus.classList.remove('error');
+  try {
+    await copyDoses(sources, dateStr);
+    medicationStatus.textContent = sources.length === 1 ? 'Added.' : `Added ${sources.length} doses.`;
+  } catch (err) {
+    medicationStatus.textContent = 'Could not save — check your connection and try again.';
+    medicationStatus.classList.add('error');
+  }
+  await loadMedicationDoses();
+  renderMedicationListForDate(dailyDateInput.value);
+  renderEntries();
 }
 
 async function loadMedicationDoses() {
