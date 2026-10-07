@@ -201,6 +201,9 @@ class MedicationDoseIn(BaseModel):
     # One or more, for meds taken together at the same time.
     medications: List[str]
     notes: Optional[str] = None
+    # True = deliberately not taken. Recorded so "skipped" and "never
+    # logged" stop looking identical.
+    skipped: bool = False
 
     @field_validator("medications")
     @classmethod
@@ -209,3 +212,19 @@ class MedicationDoseIn(BaseModel):
         if not deduped:
             raise ValueError("At least one medication is required")
         return deduped
+
+
+class GapsOkIn(BaseModel):
+    """Mark one or more days as "nothing more to add" (or undo that), so
+    gaps that can't be filled in stop being flagged as missing."""
+    dates: List[date]
+    ok: bool = True
+
+    @field_validator("dates")
+    @classmethod
+    def dates_not_empty(cls, value: List[date]) -> List[date]:
+        if not value:
+            raise ValueError("At least one date is required")
+        if len(value) > 400:
+            raise ValueError("Too many dates")
+        return value

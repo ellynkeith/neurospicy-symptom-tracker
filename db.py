@@ -72,6 +72,10 @@ def init_db():
             cur.execute("ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS good_day BOOLEAN")
             cur.execute("ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS day_rating INTEGER")
             cur.execute("ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS day_notes TEXT")
+            # Completeness view (added 2026-10-07): gaps_ok marks a day as
+            # "nothing more to add" so gaps that can't be filled in (e.g.
+            # last month's bedtime) stop being flagged as missing.
+            cur.execute("ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS gaps_ok BOOLEAN")
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS entries (
@@ -142,6 +146,12 @@ def init_db():
                     created_at TIMESTAMPTZ DEFAULT now()
                 )
                 """
+            )
+            # A skipped dose is recorded explicitly (added 2026-10-07) so a
+            # deliberate skip is distinguishable from a dose nobody logged.
+            # Anything that analyses doses must exclude skipped rows.
+            cur.execute(
+                "ALTER TABLE medication_doses ADD COLUMN IF NOT EXISTS skipped BOOLEAN NOT NULL DEFAULT false"
             )
             for cat in DEFAULT_CATEGORIES:
                 cur.execute(

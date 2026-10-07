@@ -15,6 +15,7 @@ from models import (
     CategoryIn,
     DailyLogIn,
     EntryIn,
+    GapsOkIn,
     MedicationDoseIn,
     MedicationIn,
     MedicationVisibilityIn,
@@ -249,6 +250,29 @@ def upsert_daily_log(log: DailyLogIn, request: Request):
     return row
 
 
+# Separate from the /api/daily upsert on purpose: that one replaces the whole
+# row, and marking a day "nothing more to add" must never touch its sleep or
+# rating fields.
+@router.post("/api/daily/gaps-ok")
+def set_gaps_ok(body: GapsOkIn, request: Request):
+    value = True if body.ok else None
+    if is_demo(request):
+        demo_store.set_gaps_ok([d.isoformat() for d in body.dates], value)
+        return {"dates": [d.isoformat() for d in body.dates], "gaps_ok": value}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for d in body.dates:
+                cur.execute(
+                    """
+                    INSERT INTO daily_logs (entry_date, gaps_ok) VALUES (%s, %s)
+                    ON CONFLICT (entry_date) DO UPDATE SET gaps_ok = EXCLUDED.gaps_ok
+                    """,
+                    (d, value),
+                )
+        conn.commit()
+    return {"dates": [d.isoformat() for d in body.dates], "gaps_ok": value}
+
+
 @router.get("/api/wetting")
 def list_wetting_incidents(request: Request):
     if is_demo(request):
@@ -413,8 +437,8 @@ def create_medication_dose(dose: MedicationDoseIn, request: Request):
             cur.execute(
                 """
                 INSERT INTO medication_doses
-                    (entry_date, taken_time, medications, notes)
-                VALUES (%s, %s, %s, %s)
+                    (entry_date, taken_time, medications, notes, skipped)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
@@ -422,6 +446,7 @@ def create_medication_dose(dose: MedicationDoseIn, request: Request):
                     dose.taken_time,
                     dose.medications,
                     dose.notes,
+                    dose.skipped,
                 ),
             )
             row = cur.fetchone()
@@ -441,7 +466,7 @@ def update_medication_dose(dose_id: int, dose: MedicationDoseIn, request: Reques
             cur.execute(
                 """
                 UPDATE medication_doses
-                SET entry_date = %s, taken_time = %s, medications = %s, notes = %s
+                SET entry_date = %s, taken_time = %s, medications = %s, notes = %s, skipped = %s
                 WHERE id = %s
                 RETURNING *
                 """,
@@ -450,6 +475,7 @@ def update_medication_dose(dose_id: int, dose: MedicationDoseIn, request: Reques
                     dose.taken_time,
                     dose.medications,
                     dose.notes,
+                    dose.skipped,
                     dose_id,
                 ),
             )
@@ -491,7 +517,7 @@ EXPORT_TABLES = {
     "daily.csv": (
         "daily_logs",
         ["entry_date", "good_day", "day_rating", "day_notes", "wake_time", "bedtime",
-         "fell_asleep_time", "night_awakenings", "exercise_minutes", "exercise_type"],
+         "fell_asleep_time", "night_awakenings", "exercise_minutes", "exercise_type", "gaps_ok"],
         "entry_date",
     ),
     "wetting_incidents.csv": (
@@ -501,7 +527,7 @@ EXPORT_TABLES = {
     ),
     "medication_doses.csv": (
         "medication_doses",
-        ["id", "entry_date", "taken_time", "medications", "notes", "created_at"],
+        ["id", "entry_date", "taken_time", "medications", "skipped", "notes", "created_at"],
         "entry_date, taken_time NULLS LAST, id",
     ),
 }

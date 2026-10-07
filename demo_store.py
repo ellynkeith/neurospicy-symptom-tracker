@@ -117,16 +117,33 @@ class DemoStore:
                 }
             )
 
+        # Mostly complete, with a few deliberate gaps so the demo shows the
+        # "what's missing" view: day 2 has no bedtime and no afternoon dose,
+        # day 4's afternoon dose is marked skipped, day 6 has nothing at all.
         seed_daily = [
-            dict(days_ago=0, bedtime="21:00", fell_asleep_time="21:35", wake_time="07:00",
-                 night_awakenings=1),
+            dict(days_ago=0, bedtime=None, fell_asleep_time=None, wake_time="07:00",
+                 night_awakenings=None),
             dict(days_ago=1, bedtime="21:30", fell_asleep_time="21:40", wake_time="06:45",
-                 night_awakenings=0),
+                 night_awakenings=0, day_rating=3),
+            dict(days_ago=2, bedtime=None, fell_asleep_time=None, wake_time="07:10",
+                 night_awakenings=None, day_rating=4),
             dict(days_ago=3, bedtime="22:15", fell_asleep_time=None, wake_time="07:15",
-                 night_awakenings=2),
-            dict(days_ago=4, bedtime=None, fell_asleep_time=None, wake_time=None,
-                 night_awakenings=None, good_day=True, day_rating=5,
+                 night_awakenings=2, day_rating=2),
+            dict(days_ago=4, bedtime="20:45", fell_asleep_time="21:10", wake_time="07:00",
+                 night_awakenings=0, good_day=True, day_rating=5,
                  day_notes="Easy morning, great at the park."),
+            dict(days_ago=5, bedtime="21:00", fell_asleep_time="21:35", wake_time="06:50",
+                 night_awakenings=1, day_rating=3),
+            dict(days_ago=7, bedtime="20:50", fell_asleep_time="21:05", wake_time="07:05",
+                 night_awakenings=0, good_day=True, day_rating=4),
+            dict(days_ago=8, bedtime="21:10", fell_asleep_time="21:30", wake_time="07:00",
+                 night_awakenings=0, day_rating=3),
+            # Older demo entries: marked "nothing more to add" so they don't
+            # read as incomplete.
+            dict(days_ago=45, bedtime=None, fell_asleep_time=None, wake_time=None,
+                 night_awakenings=None, gaps_ok=True),
+            dict(days_ago=380, bedtime=None, fell_asleep_time=None, wake_time=None,
+                 night_awakenings=None, gaps_ok=True),
         ]
         for row in seed_daily:
             entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
@@ -139,6 +156,7 @@ class DemoStore:
                 "good_day": row.get("good_day"),
                 "day_rating": row.get("day_rating"),
                 "day_notes": row.get("day_notes"),
+                "gaps_ok": row.get("gaps_ok"),
                 # No longer edited via the UI -- kept in the row shape since
                 # the real daily_logs table still has these columns.
                 "exercise_minutes": None,
@@ -167,6 +185,18 @@ class DemoStore:
             dict(days_ago=0, taken_time="08:00", medications=["am meds", "vitamin d"], notes=None),
             dict(days_ago=0, taken_time="15:30", medications=["pm meds"], notes=None),
             dict(days_ago=1, taken_time="08:05", medications=["am meds"], notes="Slightly late, hard time waking up."),
+            dict(days_ago=1, taken_time="15:30", medications=["pm meds"], notes=None),
+            dict(days_ago=2, taken_time="08:00", medications=["am meds"], notes=None),
+            dict(days_ago=3, taken_time="08:00", medications=["am meds"], notes=None),
+            dict(days_ago=3, taken_time="15:40", medications=["pm meds"], notes=None),
+            dict(days_ago=4, taken_time="08:00", medications=["am meds"], notes=None),
+            dict(days_ago=4, taken_time=None, medications=["pm meds"], notes="Napped through it.", skipped=True),
+            dict(days_ago=5, taken_time="08:10", medications=["am meds"], notes=None),
+            dict(days_ago=5, taken_time="15:30", medications=["pm meds"], notes=None),
+            dict(days_ago=7, taken_time="08:00", medications=["am meds"], notes=None),
+            dict(days_ago=7, taken_time="15:30", medications=["pm meds"], notes=None),
+            dict(days_ago=8, taken_time="08:00", medications=["am meds"], notes=None),
+            dict(days_ago=8, taken_time="15:30", medications=["pm meds"], notes=None),
         ]
         for row in seed_medication_doses:
             entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
@@ -177,6 +207,7 @@ class DemoStore:
                     "taken_time": row["taken_time"],
                     "medications": list(row["medications"]),
                     "notes": row["notes"],
+                    "skipped": row.get("skipped", False),
                 }
             )
 
@@ -262,6 +293,7 @@ class DemoStore:
                 "good_day": log.good_day,
                 "day_rating": log.day_rating,
                 "day_notes": log.day_notes,
+                "gaps_ok": existing.get("gaps_ok") if existing else None,
                 # No longer edited via the UI -- preserve whatever's already
                 # stored instead of nulling it out on every sleep-only save.
                 "exercise_minutes": log.exercise_minutes if log.exercise_minutes is not None
@@ -271,6 +303,20 @@ class DemoStore:
             }
             self.daily_logs[row["entry_date"]] = row
             return row
+
+    def set_gaps_ok(self, dates, value):
+        with self._lock:
+            for entry_date in dates:
+                row = self.daily_logs.get(entry_date)
+                if row is None:
+                    row = {
+                        "entry_date": entry_date, "bedtime": None, "fell_asleep_time": None,
+                        "wake_time": None, "night_awakenings": None, "good_day": None,
+                        "day_rating": None, "day_notes": None, "exercise_minutes": None,
+                        "exercise_type": None,
+                    }
+                    self.daily_logs[entry_date] = row
+                row["gaps_ok"] = value
 
     def list_wetting_incidents(self):
         with self._lock:
@@ -343,6 +389,7 @@ class DemoStore:
                 "taken_time": dose.taken_time.isoformat() if dose.taken_time else None,
                 "medications": list(dose.medications),
                 "notes": dose.notes,
+                "skipped": dose.skipped,
             }
             self.medication_doses.append(row)
             return row
@@ -355,6 +402,7 @@ class DemoStore:
                     row["taken_time"] = dose.taken_time.isoformat() if dose.taken_time else None
                     row["medications"] = list(dose.medications)
                     row["notes"] = dose.notes
+                    row["skipped"] = dose.skipped
                     return row
             return None
 

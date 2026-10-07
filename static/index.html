@@ -192,6 +192,10 @@
   details.period:not([open]) > summary { margin-bottom: 4px; }
   details.period.year > .period-body { padding-left: 14px; }
   .day-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
     font-size: 0.95rem;
     font-weight: 600;
     color: var(--ink-soft);
@@ -199,6 +203,62 @@
     padding-bottom: 6px;
     margin-bottom: 10px;
   }
+  .day-title { margin-right: auto; }
+  .gap-chip {
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 400;
+    color: var(--danger);
+    background: transparent;
+    border: 1px dashed var(--danger);
+    border-radius: 999px;
+    padding: 2px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .gap-chip:hover { background: rgba(168, 87, 74, 0.08); }
+  .gap-ignore {
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--ink-soft);
+    background: none;
+    border: none;
+    padding: 2px 2px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    opacity: 0.75;
+  }
+  .gap-ignore:hover { opacity: 1; }
+  .period-incomplete { color: var(--danger); }
+  .period-meta .gap-ignore { margin-left: 8px; }
+  .stub-action { margin-left: 12px; font-style: normal; }
+
+  .gap-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    margin: 10px 0 18px;
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+  }
+  .gap-strip b { color: var(--ink); font-weight: 600; }
+  .gap-cells { display: flex; gap: 4px; }
+  .gap-cell {
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border-radius: 3px;
+    border: 1.5px solid var(--teal);
+    background: transparent;
+    cursor: pointer;
+  }
+  .gap-cell.full { background: var(--teal); }
+  .gap-cell.part { background: linear-gradient(135deg, var(--teal-dim) 50%, transparent 50%); }
+  .gap-cell.none { border: 1.5px dashed var(--danger); }
+  .gap-cell.today { outline: 1.5px solid var(--ink); outline-offset: 2px; }
   .entry {
     padding: 12px 0;
     border-bottom: 1px solid var(--paper-dim);
@@ -364,7 +424,11 @@
     padding: 5px 0; font-size: 0.85rem; border-top: 1px solid var(--paper-dim);
   }
   .med-copy-row .badge { white-space: nowrap; }
-  .med-copy-row .link-btn, .med-copy-done { margin-left: auto; }
+  .med-copy-actions, .med-copy-done { margin-left: auto; }
+  .med-copy-actions { display: flex; gap: 14px; }
+  .badge.skipped { background: transparent; border: 1px solid var(--line); color: var(--ink-soft); }
+  .skip-check { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--ink-soft); margin: 2px 0 12px; }
+  .skip-check input { width: auto; margin: 0; }
   .med-copy-done { font-size: 0.8rem; color: var(--ink-soft); font-style: italic; }
   .chip.hidden-med.selected { color: #fff; }
   .manage-meds-btn { margin-top: 8px; padding: 0; }
@@ -576,6 +640,7 @@
           <button type="button" class="primary" id="addMedicationBtn">Add dose</button>
         </div>
       </div>
+      <label class="skip-check"><input type="checkbox" id="medicationSkippedInput"> Skipped (not taken)</label>
       <div class="field">
         <label for="medicationNotesInput">Additional details (optional)</label>
         <textarea id="medicationNotesInput" placeholder="Anything else worth remembering"></textarea>
@@ -595,6 +660,7 @@
         <button class="link-btn" id="exportAllBtn" title="Every table as its own CSV, zipped">Export all data</button>
       </div>
     </div>
+    <div class="gap-strip" id="gapStrip" hidden></div>
     <div id="entriesList"></div>
   </section>
 </div>
@@ -1103,6 +1169,7 @@ manageMedsBtn.addEventListener('click', () => {
 
 const medicationTimeInput = document.getElementById('medicationTimeInput');
 const medicationNotesInput = document.getElementById('medicationNotesInput');
+const medicationSkippedInput = document.getElementById('medicationSkippedInput');
 const medicationList = document.getElementById('medicationList');
 const medicationStatus = document.getElementById('medicationStatus');
 const addMedicationBtn = document.getElementById('addMedicationBtn');
@@ -1127,6 +1194,7 @@ function startEditMedication(d) {
   selectedMedications = [...(d.medications || [])];
   renderMedicationChips();
   medicationNotesInput.value = d.notes || '';
+  medicationSkippedInput.checked = !!d.skipped;
 
   addMedicationBtn.textContent = 'Update dose';
   cancelMedicationEditBtn.hidden = false;
@@ -1148,6 +1216,7 @@ cancelMedicationEditBtn.addEventListener('click', () => {
   selectedMedications = [];
   renderMedicationChips();
   medicationNotesInput.value = '';
+  medicationSkippedInput.checked = false;
   medicationStatus.textContent = '';
   medicationStatus.classList.remove('error');
 });
@@ -1174,9 +1243,15 @@ function renderMedicationListForDate(dateStr) {
     time.textContent = fmtTime(d.taken_time);
     head.appendChild(time);
 
+    if (d.skipped) {
+      const skipBadge = document.createElement('span');
+      skipBadge.className = 'badge skipped';
+      skipBadge.textContent = 'Skipped';
+      head.appendChild(skipBadge);
+    }
     (d.medications || []).forEach(med => {
       const nameBadge = document.createElement('span');
-      nameBadge.className = 'badge';
+      nameBadge.className = 'badge' + (d.skipped ? ' skipped' : '');
       nameBadge.textContent = med;
       head.appendChild(nameBadge);
     });
@@ -1222,34 +1297,40 @@ function doseAlreadyLogged(src, targetDoses) {
   return targetDoses.some(t => (t.medications || []).some(m => (src.medications || []).includes(m)));
 }
 
-async function copyDoses(sources, dateStr) {
+async function copyDoses(sources, dateStr, skipped = false) {
   for (const src of sources) {
     const res = await fetch(`${API}/medication-doses`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         entry_date: dateStr,
-        taken_time: src.taken_time || null,
+        taken_time: skipped ? null : (src.taken_time || null),
         medications: src.medications,
         notes: null,
+        skipped,
       })
     });
     if (!res.ok) throw new Error(await res.text());
   }
 }
 
+// The most recent earlier day with at least one taken (not skipped) dose.
+function copySourceDate(dateStr) {
+  return Object.keys(medicationsByDate)
+    .filter(d => d < dateStr && (medicationsByDate[d] || []).some(x => !x.skipped))
+    .sort()
+    .pop();
+}
+
 function renderMedCopyPanel(dateStr) {
   medCopyPanel.innerHTML = '';
   medCopyPanel.hidden = true;
   if (!dateStr) return;
-  const sourceDate = Object.keys(medicationsByDate)
-    .filter(d => d < dateStr && (medicationsByDate[d] || []).length)
-    .sort()
-    .pop();
+  const sourceDate = copySourceDate(dateStr);
   if (!sourceDate) return;
 
   const targetDoses = medicationsByDate[dateStr] || [];
-  const sources = [...medicationsByDate[sourceDate]]
+  const sources = medicationsByDate[sourceDate].filter(x => !x.skipped)
     .sort((a, b) => (a.taken_time || '99').localeCompare(b.taken_time || '99'));
   const missing = sources.filter(s => !doseAlreadyLogged(s, targetDoses));
   if (!missing.length) return;  // everything from that day is already here
@@ -1290,25 +1371,36 @@ function renderMedCopyPanel(dateStr) {
       done.textContent = 'already logged';
       row.appendChild(done);
     } else {
+      const actions = document.createElement('span');
+      actions.className = 'med-copy-actions';
       const addBtn = document.createElement('button');
       addBtn.type = 'button';
       addBtn.className = 'link-btn';
       addBtn.textContent = 'add';
       addBtn.addEventListener('click', () => runCopy([src], dateStr, addBtn));
-      row.appendChild(addBtn);
+      actions.appendChild(addBtn);
+      const skipBtn = document.createElement('button');
+      skipBtn.type = 'button';
+      skipBtn.className = 'link-btn';
+      skipBtn.textContent = 'skipped';
+      skipBtn.title = 'She did not take this one that day';
+      skipBtn.addEventListener('click', () => runCopy([src], dateStr, skipBtn, true));
+      actions.appendChild(skipBtn);
+      row.appendChild(actions);
     }
     medCopyPanel.appendChild(row);
   });
   medCopyPanel.hidden = false;
 }
 
-async function runCopy(sources, dateStr, btn) {
-  btn.disabled = true;
+async function runCopy(sources, dateStr, btn, skipped = false) {
+  if (btn) btn.disabled = true;
   medicationStatus.textContent = '';
   medicationStatus.classList.remove('error');
   try {
-    await copyDoses(sources, dateStr);
-    medicationStatus.textContent = sources.length === 1 ? 'Added.' : `Added ${sources.length} doses.`;
+    await copyDoses(sources, dateStr, skipped);
+    medicationStatus.textContent = skipped ? 'Marked as skipped.'
+      : (sources.length === 1 ? 'Added.' : `Added ${sources.length} doses.`);
   } catch (err) {
     medicationStatus.textContent = 'Could not save — check your connection and try again.';
     medicationStatus.classList.add('error');
@@ -1352,6 +1444,7 @@ addMedicationBtn.addEventListener('click', async () => {
     taken_time: medicationTimeInput.value || null,
     medications: selectedMedications,
     notes: medicationNotesInput.value || null,
+    skipped: medicationSkippedInput.checked,
   };
 
   addMedicationBtn.disabled = true;
@@ -1367,6 +1460,7 @@ addMedicationBtn.addEventListener('click', async () => {
     selectedMedications = [];
     renderMedicationChips();
     medicationNotesInput.value = '';
+    medicationSkippedInput.checked = false;
     if (isEditingMedication) endEditMedication();
 
     await loadMedicationDoses();
@@ -1410,7 +1504,213 @@ function fmtTime(t) {
   return `${h12}:${m} ${ampm}`;
 }
 
+// ---- what's missing: per-day completeness ----
+// Expected every day: woke-up time, bedtime, a rating (the 1-5 or "had a good
+// day"), and her usual medications. "Usual" = taken on at least 2 of the
+// previous 3 days that have any dose logged, ignoring hidden meds -- so a
+// one-off skip or a one-off extra doesn't change what's expected, a dropped
+// med stops being expected by itself after two days, and hiding a med stops
+// it immediately. A dose marked skipped counts as accounted for. Today is only flagged for things
+// already due (bedtime and rating never are until tomorrow). A day marked
+// gaps_ok ("nothing more to add") is never flagged. Neither is a stretch of more
+// than MAX_EMPTY_RUN days in a row with nothing logged at all.
+const STRIP_DAYS = 14;
+const STUB_DAYS = 30;       // how far back fully-missed days get their own row
+const MED_GRACE_MINUTES = 120;
+const MAX_EMPTY_RUN = 14;   // longer empty stretches count as not tracking, not as gaps
+let completeness = {};
+
+function addDaysStr(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return localDateStr(d);
+}
+
+function minutesOf(t) {
+  const [h, m] = t.split(':');
+  return parseInt(h, 10) * 60 + parseInt(m, 10);
+}
+
+function computeCompleteness() {
+  const result = {};
+  const today = todayStr();
+  const nowMin = minutesOf(nowStr());
+  const entryDates = new Set(entries.map(e => e.entry_date));
+  const allDates = [
+    ...entryDates,
+    ...dailyLogs.map(l => l.entry_date),
+    ...Object.keys(wettingByDate),
+    ...Object.keys(medicationsByDate),
+  ].sort();
+  if (!allDates.length) return result;
+  const hidden = new Set(medications.filter(m => !m.active).map(m => m.name));
+  const recent = [];  // the 3 most recent earlier days with any taken dose: { taken:Set, times:{} }
+
+  for (let d = allDates[0]; d <= today; d = addDaysStr(d, 1)) {
+    const isToday = d === today;
+    const log = dailyLogMap[d];
+    const doses = medicationsByDate[d] || [];
+    const missing = [];
+
+    const noWake = !(log && log.wake_time) && (!isToday || nowMin >= 12 * 60);
+    const noBed = !(log && log.bedtime) && !isToday;
+    if (noWake && noBed) missing.push({ key: 'sleep', label: 'Sleep' });
+    else if (noWake) missing.push({ key: 'wake', label: 'Woke up' });
+    else if (noBed) missing.push({ key: 'bed', label: 'Bedtime' });
+
+    const taken = new Set();
+    const accounted = new Set();
+    const times = {};
+    doses.forEach(x => (x.medications || []).forEach(m => {
+      accounted.add(m);
+      if (!x.skipped) { taken.add(m); if (x.taken_time) times[m] = x.taken_time; }
+    }));
+    const counts = {};
+    const usualTime = {};
+    recent.forEach(r => r.taken.forEach(m => {
+      counts[m] = (counts[m] || 0) + 1;
+      if (r.times[m]) usualTime[m] = r.times[m];
+    }));
+    const need = Math.min(2, recent.length);
+    const expected = Object.keys(counts).filter(m => counts[m] >= need && !hidden.has(m));
+    const unaccounted = expected.filter(m => !accounted.has(m));
+    const dueMeds = unaccounted.filter(m =>
+      !isToday || (usualTime[m] && nowMin >= minutesOf(usualTime[m]) + MED_GRACE_MINUTES));
+    if (dueMeds.length) {
+      missing.push({
+        key: 'meds',
+        label: doses.length ? `${dueMeds.length} med${dueMeds.length === 1 ? '' : 's'}` : 'Meds',
+        detail: dueMeds.sort().join(', '),
+      });
+    }
+
+    if (!isToday && !(log && (log.day_rating != null || log.good_day))) {
+      missing.push({ key: 'rating', label: 'Rating' });
+    }
+
+    const hasData = entryDates.has(d) || hasDailyContent(log) ||
+      (wettingByDate[d] || []).length > 0 || doses.length > 0;
+    const dismissed = !!(log && log.gaps_ok);
+    const shown = dismissed ? [] : missing;
+    result[d] = {
+      missing: shown,
+      dismissed: dismissed && missing.length > 0,
+      hasData,
+      status: shown.length ? (hasData ? 'part' : 'none') : (hasData ? 'full' : 'pending'),
+    };
+
+    if (!isToday && taken.size) {
+      recent.push({ taken, times });
+      if (recent.length > 3) recent.shift();
+    }
+  }
+
+  // A long unbroken stretch with nothing logged at all (before logging
+  // really started, or a break from tracking) isn't a set of gaps to fill
+  // in -- don't flag it.
+  const dates = Object.keys(result).sort();
+  let run = [];
+  const flushRun = () => {
+    if (run.length > MAX_EMPTY_RUN) {
+      run.forEach(d => { result[d].missing = []; result[d].status = 'pending'; });
+    }
+    run = [];
+  };
+  dates.forEach(d => { if (result[d].hasData) flushRun(); else run.push(d); });
+  flushRun();
+  return result;
+}
+
+function fmtShortDay(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString(undefined, { weekday: 'short' }) + ' ' +
+    d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// Open the Daily Context panel on a date and put the cursor where the gap is.
+function openDailyFor(dateStr, key) {
+  dailyDetails.open = true;
+  if (dailyDateInput.value !== dateStr) {
+    dailyDateInput.value = dateStr;
+    renderWettingListForDate(dateStr);
+    renderMedicationListForDate(dateStr);
+    populateDailyFormForDate(dateStr);
+  }
+  const target = {
+    sleep: wakeTimeInput, wake: wakeTimeInput, bed: bedtimeInput,
+    rating: goodDayChip, meds: document.querySelector('.medication-section'),
+  }[key] || dailyDetails;
+  if (target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (target.focus && key !== 'meds' && key !== 'rating') target.focus({ preventScroll: true });
+}
+
+async function setGapsOk(dates, ok) {
+  await fetch(`${API}/daily/gaps-ok`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dates, ok })
+  });
+  await loadDailyLogs();
+  renderEntries();
+}
+
+function jumpToDay(dateStr) {
+  const y = dateStr.slice(0, 4);
+  periodOpenState[dateStr.slice(0, 7)] = true;
+  if (y !== String(new Date().getFullYear())) periodOpenState[y] = true;
+  renderEntries();
+  const el = document.getElementById(`day-${dateStr}`);
+  if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+const gapStrip = document.getElementById('gapStrip');
+
+function renderGapStrip() {
+  gapStrip.innerHTML = '';
+  const today = todayStr();
+  const days = [];
+  for (let i = STRIP_DAYS - 1; i >= 0; i--) {
+    const d = addDaysStr(today, -i);
+    if (completeness[d]) days.push(d);
+  }
+  gapStrip.hidden = !days.length;
+  if (!days.length) return;
+
+  const cells = document.createElement('div');
+  cells.className = 'gap-cells';
+  days.forEach(d => {
+    const c = completeness[d];
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = `gap-cell ${c.status}` + (d === today ? ' today' : '');
+    const what = c.missing.length
+      ? 'missing ' + c.missing.map(m => m.detail ? `${m.label.toLowerCase()} (${m.detail})` : m.label.toLowerCase()).join(', ')
+      : (c.status === 'pending' ? (d === today ? 'nothing due yet' : 'not tracked') : 'complete');
+    cell.title = `${fmtShortDay(d)}: ${what}`;
+    cell.setAttribute('aria-label', cell.title);
+    cell.addEventListener('click', () => jumpToDay(d));
+    cells.appendChild(cell);
+  });
+  gapStrip.appendChild(cells);
+
+  const need = days.filter(d => completeness[d].missing.length).reverse();
+  const text = document.createElement('div');
+  text.className = 'gap-text';
+  if (!need.length) {
+    text.textContent = `Last ${days.length} days · all caught up`;
+  } else {
+    const names = need.slice(0, 4).map(fmtShortDay).join(', ') + (need.length > 4 ? `, +${need.length - 4} more` : '');
+    text.append(`Last ${days.length} days · `);
+    const b = document.createElement('b');
+    b.textContent = `${need.length} need${need.length === 1 ? 's' : ''} something`;
+    text.append(b, `: ${names}`);
+  }
+  gapStrip.appendChild(text);
+}
+
 function renderEntries() {
+  completeness = computeCompleteness();
+  renderGapStrip();
   const filter = filterSelect.value;
   const filtered = filter ? entries.filter(e => (e.categories || []).includes(filter)) : entries;
 
@@ -1435,6 +1735,14 @@ function renderEntries() {
     Object.keys(medicationsByDate).forEach(dateStr => {
       if (!groups[dateStr]) groups[dateStr] = [];
     });
+    // ...and recent days with something missing that have no row at all,
+    // which is exactly when a gap is otherwise invisible.
+    const stubFrom = addDaysStr(todayStr(), -STUB_DAYS);
+    Object.keys(completeness).forEach(dateStr => {
+      if (dateStr >= stubFrom && completeness[dateStr].missing.length && !groups[dateStr]) {
+        groups[dateStr] = [];
+      }
+    });
   }
 
   entriesList.innerHTML = '';
@@ -1449,9 +1757,40 @@ function renderEntries() {
   dateKeys.sort((a, b) => b.localeCompare(a)).forEach(dateStr => {
     const group = document.createElement('div');
     group.className = 'day-group';
+    group.id = `day-${dateStr}`;
     const heading = document.createElement('div');
     heading.className = 'day-heading';
-    heading.textContent = fmtDayHeading(dateStr);
+    const dayTitle = document.createElement('span');
+    dayTitle.className = 'day-title';
+    dayTitle.textContent = fmtDayHeading(dateStr);
+    heading.appendChild(dayTitle);
+    const comp = completeness[dateStr] || { missing: [], hasData: true };
+    comp.missing.forEach(m => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'gap-chip';
+      chip.textContent = `+ ${m.label}`;
+      chip.title = m.detail ? `Missing: ${m.detail}` : `Add ${m.label.toLowerCase()}`;
+      chip.addEventListener('click', () => openDailyFor(dateStr, m.key));
+      heading.appendChild(chip);
+    });
+    if (comp.missing.length) {
+      const ignore = document.createElement('button');
+      ignore.type = 'button';
+      ignore.className = 'gap-ignore';
+      ignore.textContent = 'ignore';
+      ignore.title = "Nothing more to add for this day — stop flagging it";
+      ignore.addEventListener('click', () => setGapsOk([dateStr], true));
+      heading.appendChild(ignore);
+    } else if (comp.dismissed) {
+      const undo = document.createElement('button');
+      undo.type = 'button';
+      undo.className = 'gap-ignore';
+      undo.textContent = 'gaps ignored';
+      undo.title = 'This day has gaps you chose to ignore. Click to flag them again.';
+      undo.addEventListener('click', () => setGapsOk([dateStr], false));
+      heading.appendChild(undo);
+    }
     group.appendChild(heading);
 
     const dailyLog = dailyLogMap[dateStr];
@@ -1545,13 +1884,13 @@ function renderEntries() {
       dHead.className = 'entry-head';
 
       const dLabel = document.createElement('span');
-      dLabel.className = 'badge';
-      dLabel.textContent = 'Medication';
+      dLabel.className = 'badge' + (d.skipped ? ' skipped' : '');
+      dLabel.textContent = d.skipped ? 'Skipped' : 'Medication';
       dHead.appendChild(dLabel);
 
       (d.medications || []).forEach(med => {
         const dNameBadge = document.createElement('span');
-        dNameBadge.className = 'badge';
+        dNameBadge.className = 'badge' + (d.skipped ? ' skipped' : '');
         dNameBadge.textContent = med;
         dHead.appendChild(dNameBadge);
       });
@@ -1585,7 +1924,38 @@ function renderEntries() {
 
     // Only on days nobody has marked yet -- on a good day it's redundant, and
     // leaving it on unmarked days flags the ones that are still ambiguous.
-    if (!groups[dateStr].length && !(dailyLog && dailyLog.good_day)) {
+    if (!comp.hasData && comp.missing.length) {
+      const stub = document.createElement('div');
+      stub.className = 'day-empty';
+      stub.append('Nothing logged for this day.');
+      const srcDate = copySourceDate(dateStr);
+      if (srcDate && comp.missing.some(m => m.key === 'meds')) {
+        const sameBtn = document.createElement('button');
+        sameBtn.type = 'button';
+        sameBtn.className = 'link-btn stub-action';
+        sameBtn.textContent = `Same meds as ${fmtShortDay(srcDate)}`;
+        sameBtn.addEventListener('click', () =>
+          runCopy(medicationsByDate[srcDate].filter(x => !x.skipped), dateStr, sameBtn));
+        stub.appendChild(sameBtn);
+      }
+      const goodBtn = document.createElement('button');
+      goodBtn.type = 'button';
+      goodBtn.className = 'link-btn stub-action';
+      goodBtn.textContent = 'Had a good day';
+      goodBtn.addEventListener('click', async () => {
+        goodBtn.disabled = true;
+        await fetch(`${API}/daily`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entry_date: dateStr, good_day: true })
+        });
+        await loadDailyLogs();
+        if (dailyDateInput.value === dateStr) populateDailyFormForDate(dateStr);
+        renderEntries();
+      });
+      stub.appendChild(goodBtn);
+      group.appendChild(stub);
+    } else if (!groups[dateStr].length && !(dailyLog && dailyLog.good_day)) {
       const dayEmpty = document.createElement('div');
       dayEmpty.className = 'day-empty';
       dayEmpty.textContent = 'No behavior entries logged.';
@@ -1681,7 +2051,7 @@ function renderEntries() {
       })
       .forEach(item => group.appendChild(item.el));
 
-    periods.add(dateStr, group, groups[dateStr].length);
+    periods.add(dateStr, group, groups[dateStr].length, comp.missing.length > 0);
   });
   periods.finish();
 }
@@ -1725,10 +2095,10 @@ function makePeriodContainers() {
     details.appendChild(body);
     details.addEventListener('toggle', () => { periodOpenState[key] = details.open; });
     parent.appendChild(details);
-    return { details, body, meta, days: 0, entries: 0 };
+    return { details, body, meta, days: 0, entries: 0, incomplete: [] };
   }
 
-  function add(dateStr, dayEl, entryCount) {
+  function add(dateStr, dayEl, entryCount, isIncomplete) {
     const y = dateStr.slice(0, 4);
     const ym = dateStr.slice(0, 7);
     if (!months[ym]) {
@@ -1744,16 +2114,48 @@ function makePeriodContainers() {
     months[ym].body.appendChild(dayEl);
     months[ym].days += 1;
     months[ym].entries += entryCount;
-    if (years[y]) { years[y].days += 1; years[y].entries += entryCount; }
+    if (isIncomplete) months[ym].incomplete.push(dateStr);
+    if (years[y]) {
+      years[y].days += 1;
+      years[y].entries += entryCount;
+      if (isIncomplete) years[y].incomplete.push(dateStr);
+    }
   }
 
   function fmtMeta(p) {
     return `${p.days} day${p.days === 1 ? '' : 's'} · ${p.entries} entr${p.entries === 1 ? 'y' : 'ies'}`;
   }
 
+  // Adds "· N incomplete" and, when some of those days are too old to
+  // realistically fill in, a one-click way to stop flagging them.
+  function fillMeta(p) {
+    p.meta.textContent = fmtMeta(p);
+    if (!p.incomplete.length) return;
+    const inc = document.createElement('span');
+    inc.className = 'period-incomplete';
+    inc.textContent = ` · ${p.incomplete.length} incomplete`;
+    p.meta.appendChild(inc);
+    const cutoffDate = localDateStr(cutoff);
+    const older = p.incomplete.filter(d => d < cutoffDate);
+    if (!older.length) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'gap-ignore';
+    btn.textContent = `ignore ${older.length} older`;
+    btn.title = `Stop flagging the ${older.length} incomplete day${older.length === 1 ? '' : 's'} more than ${RECENT_DAYS} days old`;
+    btn.addEventListener('click', ev => {
+      ev.preventDefault();   // don't toggle the <details>
+      ev.stopPropagation();
+      if (confirm(`Stop flagging ${older.length} incomplete day${older.length === 1 ? '' : 's'} older than ${RECENT_DAYS} days? Their data is kept; they just won't show as missing anything.`)) {
+        setGapsOk(older, true);
+      }
+    });
+    p.meta.appendChild(btn);
+  }
+
   function finish() {
-    Object.values(months).forEach(p => { p.meta.textContent = fmtMeta(p); });
-    Object.values(years).forEach(p => { p.meta.textContent = fmtMeta(p); });
+    Object.values(months).forEach(fillMeta);
+    Object.values(years).forEach(fillMeta);
   }
 
   return { add, finish };
