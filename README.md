@@ -23,6 +23,7 @@ Live at [behavior-tracker-st8g.onrender.com](https://behavior-tracker-st8g.onren
 - [x] CSV Export: pull the behavior log (or a filtered slice) for appointments or school meetings
 - [x] Full Data Export: one click downloads a zip with a tidy CSV per table (behavior entries, daily context, wetting incidents, medication doses) — opens in Excel, loads straight into pandas, and doubles as a manual backup (also available at `GET /api/export`)
 - [x] Shared Login: household-wide password gate so the log isn't wide open to the internet
+- [x] Read-Only Login: an optional second login (`VIEWER_PASSWORD`) that can see and export the real log but not change it — for a co-parent, grandparent, or clinician. The server refuses every write from that login; the page just hides the editing controls
 - [x] Demo Mode: a separate login serves sample data so anyone can see how it works without seeing (or risking) the real log
 - [ ] Data Insights: surface patterns over time — frequency by category, trends by setting or time of day, common situations/demands, correlations with sleep and medication timing
 - [ ] Automated Backups: beyond the manual CSV export

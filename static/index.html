@@ -339,6 +339,14 @@
     margin-bottom: 20px;
   }
 
+  body.read-only #newEntrySection,
+  body.read-only #dailyDetails,
+  body.read-only .logged-by,
+  body.read-only .delete-btn,
+  body.read-only .gap-ignore,
+  body.read-only .stub-action { display: none; }
+  body.read-only .gap-chip { pointer-events: none; }
+
   details.daily-details {
     margin-bottom: 36px;
     border: 1px solid var(--line);
@@ -453,6 +461,9 @@
   <div id="demoBanner" class="demo-banner" hidden>
     You're viewing demo data — nothing you add or delete here is saved to the real log.
   </div>
+  <div id="readOnlyBanner" class="demo-banner" hidden>
+    Read-only view — you can see and export the log, but not change it.
+  </div>
   <header>
     <h1><em>Behavior</em> &amp; Symptom Log</h1>
     <div class="logged-by">
@@ -461,7 +472,7 @@
     </div>
   </header>
 
-  <section>
+  <section id="newEntrySection">
     <div class="section-title" id="entrySectionTitle">New entry</div>
     <form id="entryForm">
       <div class="row">
@@ -2401,6 +2412,10 @@ async function loadWhoami() {
     const res = await fetch(`${API}/whoami`);
     const data = await res.json();
     document.getElementById('demoBanner').hidden = !data.demo;
+    // Read-only login: hide everything that edits. This is only tidiness --
+    // the server refuses every write from this login regardless.
+    document.getElementById('readOnlyBanner').hidden = !data.read_only;
+    document.body.classList.toggle('read-only', !!data.read_only);
   } catch (err) {
     // Non-critical -- if this fails, just leave the banner hidden.
   }

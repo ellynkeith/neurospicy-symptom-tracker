@@ -8,7 +8,7 @@ import psycopg2.extras
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
-from auth import is_demo
+from auth import is_demo, is_read_only
 from db import DATABASE_URL, get_conn
 from demo_store import demo_store
 from models import (
@@ -33,7 +33,7 @@ def health():
 
 @router.get("/api/whoami")
 def whoami(request: Request):
-    return {"demo": is_demo(request)}
+    return {"demo": is_demo(request), "read_only": is_read_only(request)}
 
 
 @router.get("/api/entries")

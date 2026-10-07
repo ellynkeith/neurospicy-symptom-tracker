@@ -20,6 +20,15 @@ APP_PASSWORD = os.environ.get("APP_PASSWORD")
 DEMO_USERNAME = os.environ.get("DEMO_USERNAME", "demo")
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD")
 
+# Optional read-only login: sees the real data but can't change it (for a
+# co-parent, grandparent, clinician...). Enforced here in the middleware --
+# every non-GET request from this login is refused -- rather than per route,
+# so a route added later can't forget the check. Disabled unless
+# VIEWER_PASSWORD is set.
+VIEWER_USERNAME = os.environ.get("VIEWER_USERNAME", "viewer")
+VIEWER_PASSWORD = os.environ.get("VIEWER_PASSWORD")
+READ_METHODS = {"GET", "HEAD", "OPTIONS"}
+
 # Paths that should stay reachable without logging in, e.g. so Render's own
 # health checks don't get blocked by auth and mark the service unhealthy.
 PUBLIC_PATHS = {"/api/health"}
@@ -60,6 +69,21 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
                 request.state.demo = True
                 return await call_next(request)
 
+            if (
+                VIEWER_PASSWORD
+                and hmac.compare_digest(username, VIEWER_USERNAME)
+                and hmac.compare_digest(password, VIEWER_PASSWORD)
+            ):
+                if request.method not in READ_METHODS:
+                    return Response(
+                        '{"detail":"This login is read-only."}',
+                        status_code=403,
+                        media_type="application/json",
+                    )
+                request.state.demo = False
+                request.state.read_only = True
+                return await call_next(request)
+
         return Response(
             status_code=401,
             headers={"WWW-Authenticate": 'Basic realm="Behavior Tracker"'},
@@ -68,3 +92,7 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
 
 def is_demo(request: Request) -> bool:
     return getattr(request.state, "demo", False)
+
+
+def is_read_only(request: Request) -> bool:
+    return getattr(request.state, "read_only", False)
