@@ -2826,6 +2826,14 @@ form.addEventListener('submit', async (ev) => {
     formStatus.classList.add('error');
     return;
   }
+  if (!loggedByInput.value.trim()) {
+    formStatus.textContent = editingEntryId !== null
+      ? "This entry doesn't say who logged it — fill in \u201cLogging as\u201d at the top (or \u201cunknown\u201d)."
+      : "Fill in \u201cLogging as\u201d at the top with your name first.";
+    formStatus.classList.add('error');
+    loggedByInput.focus();
+    return;
+  }
   if (!document.getElementById('entryTime').value) {
     formStatus.textContent = 'Add the time it happened (not when you are logging it).';
     formStatus.classList.add('error');

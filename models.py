@@ -79,7 +79,17 @@ class EntryIn(BaseModel):
     # identifiable for a given entry.
     situations: List[str] = []
     notes: Optional[str] = None
-    logged_by: Optional[str] = None
+    # Required (2026-10-15) -- with several people logging, an entry with no
+    # author can't be followed up on.
+    logged_by: str
+
+    @field_validator("logged_by")
+    @classmethod
+    def logged_by_not_empty(cls, value: str) -> str:
+        cleaned = (value or "").strip()
+        if not cleaned:
+            raise ValueError("logged_by is required")
+        return cleaned
 
     @field_validator("categories")
     @classmethod
