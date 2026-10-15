@@ -1,0 +1,9 @@
+# Local credentials for pulling data (never commit -- this repo is public)
+.viewer-credentials
+
+# Local/editor/OS files
+.DS_Store
+.idea/
+.venv/
+__pycache__/
+Claude outputs/
