@@ -4,7 +4,7 @@ from contextlib import contextmanager
 import psycopg2
 from fastapi import HTTPException
 
-from models import DEFAULT_CATEGORIES, DEFAULT_SITUATIONS
+from models import DEFAULT_CATEGORIES, DEFAULT_EVENT_CATEGORIES, DEFAULT_SITUATIONS
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -153,6 +153,35 @@ def init_db():
             cur.execute(
                 "ALTER TABLE medication_doses ADD COLUMN IF NOT EXISTS skipped BOOLEAN NOT NULL DEFAULT false"
             )
+            # Context log (added 2026-10-15): dated events, one day or a span,
+            # for slow-moving things nothing else captures (illness, school
+            # breaks, travel, dose changes). Brand-new tables, so CREATE
+            # TABLE IF NOT EXISTS covers fresh installs and live deployments.
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS event_categories (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT UNIQUE NOT NULL
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS context_events (
+                    id SERIAL PRIMARY KEY,
+                    start_date DATE NOT NULL,
+                    end_date DATE,
+                    category TEXT NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                )
+                """
+            )
+            for ev in DEFAULT_EVENT_CATEGORIES:
+                cur.execute(
+                    "INSERT INTO event_categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+                    (ev,),
+                )
             for cat in DEFAULT_CATEGORIES:
                 cur.execute(
                     "INSERT INTO categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",

@@ -371,6 +371,21 @@
     cursor: pointer;
   }
   details.daily-details form { margin-top: 16px; }
+  #contextForm input[type="text"] { width: 100%; }
+  .event-list-label { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .event-item {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px;
+    padding: 6px 0; font-size: 0.85rem; border-bottom: 1px solid var(--paper-dim);
+  }
+  .event-item:last-child { border-bottom: none; }
+  .event-span { color: var(--ink-soft); min-width: 110px; }
+  .badge.event { background: transparent; border: 1px solid #b08a4a; color: #7a5a1f; }
+  .context-event-line {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+    font-size: 0.82rem; color: var(--ink-soft); margin: -2px 0 8px;
+  }
+  .context-event-line .event-day { font-size: 0.75rem; }
+  body.read-only #contextForm { display: none; }
 
   .daily-summary {
     font-size: 0.8rem;
@@ -668,6 +683,37 @@
       </div>
       <div class="status" id="medicationStatus"></div>
     </div>
+  </details>
+
+  <details class="daily-details" id="contextDetails">
+    <summary>Context log (illness, school breaks, travel, dose changes, optional)</summary>
+    <form id="contextForm">
+      <div class="field">
+        <label>What kind of event</label>
+        <div class="chips" id="eventCategoryChips"></div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="eventStart">Start date</label>
+          <input type="date" id="eventStart">
+        </div>
+        <div class="field">
+          <label for="eventEnd">End date (leave blank for one day)</label>
+          <input type="date" id="eventEnd">
+        </div>
+      </div>
+      <div class="field">
+        <label for="eventDesc">Description (optional)</label>
+        <input type="text" id="eventDesc" placeholder="e.g. cold; melatonin 2mg → 3mg; grandparents visiting">
+      </div>
+      <div class="submit-row">
+        <button type="button" class="link-btn" id="cancelEventEditBtn" hidden>Cancel edit</button>
+        <button type="submit" class="primary" id="eventSubmitBtn">Add event</button>
+      </div>
+      <div class="status" id="eventStatus"></div>
+    </form>
+    <div class="wetting-section-label event-list-label">Events</div>
+    <div id="eventList"></div>
   </details>
 
   <section>
@@ -1829,6 +1875,10 @@ function renderEntries() {
     Object.keys(medicationsByDate).forEach(dateStr => {
       if (!groups[dateStr]) groups[dateStr] = [];
     });
+    const today = todayStr();
+    contextEventDates().forEach(dateStr => {
+      if (dateStr <= today && !groups[dateStr]) groups[dateStr] = [];
+    });
     // ...and recent days with something missing that have no row at all,
     // which is exactly when a gap is otherwise invisible.
     const stubFrom = addDaysStr(todayStr(), -STUB_DAYS);
@@ -1894,6 +1944,30 @@ function renderEntries() {
       heading.appendChild(undo);
     }
     group.appendChild(heading);
+
+    eventsOn(dateStr).forEach(ev => {
+      const line = document.createElement('div');
+      line.className = 'context-event-line';
+      const badge = document.createElement('span');
+      badge.className = 'badge event';
+      badge.textContent = ev.category;
+      line.appendChild(badge);
+      if (ev.description) line.append(ev.description);
+      if (ev.end_date) {
+        const n = daysBetween(ev.end_date, ev.start_date) + 1;
+        const k = daysBetween(dateStr, ev.start_date) + 1;
+        const day = document.createElement('span');
+        day.className = 'event-day';
+        day.textContent = `(day ${k} of ${n})`;
+        line.appendChild(day);
+      }
+      const edit = document.createElement('button');
+      edit.className = 'delete-btn';
+      edit.textContent = 'edit';
+      edit.addEventListener('click', () => startEditEvent(ev));
+      line.appendChild(edit);
+      group.appendChild(line);
+    });
 
     const dailyLog = dailyLogMap[dateStr];
     if (hasDailyContent(dailyLog)) {
@@ -2263,6 +2337,183 @@ function makePeriodContainers() {
   return { add, finish };
 }
 
+// ---- context log: dated events (one day or a span) ----
+let eventCategories = [];
+let contextEvents = [];
+let selectedEventCategory = null;
+let editingEventId = null;
+const eventCategoryChips = document.getElementById('eventCategoryChips');
+const contextForm = document.getElementById('contextForm');
+const contextDetails = document.getElementById('contextDetails');
+const eventStart = document.getElementById('eventStart');
+const eventEnd = document.getElementById('eventEnd');
+const eventDesc = document.getElementById('eventDesc');
+const eventStatus = document.getElementById('eventStatus');
+const eventSubmitBtn = document.getElementById('eventSubmitBtn');
+const cancelEventEditBtn = document.getElementById('cancelEventEditBtn');
+const eventList = document.getElementById('eventList');
+
+function renderEventCategoryChips() {
+  eventCategoryChips.innerHTML = '';
+  eventCategories.forEach(name => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (selectedEventCategory === name ? ' selected' : '');
+    chip.textContent = name;
+    chip.addEventListener('click', () => {
+      selectedEventCategory = selectedEventCategory === name ? null : name;
+      renderEventCategoryChips();
+    });
+    eventCategoryChips.appendChild(chip);
+  });
+  const addChip = document.createElement('div');
+  addChip.className = 'chip add-new';
+  addChip.textContent = '+ new';
+  addChip.addEventListener('click', async () => {
+    const name = prompt('New kind of event:');
+    if (!name || !name.trim()) return;
+    await fetch(`${API}/event-categories`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() })
+    });
+    await loadEventCategories();
+    selectedEventCategory = name.trim().toLowerCase();
+    renderEventCategoryChips();
+  });
+  eventCategoryChips.appendChild(addChip);
+}
+
+async function loadEventCategories() {
+  const res = await fetch(`${API}/event-categories`);
+  eventCategories = await res.json();
+  renderEventCategoryChips();
+}
+
+function eventEndDate(ev) { return ev.end_date || ev.start_date; }
+function eventsOn(dateStr) {
+  return contextEvents.filter(ev => dateStr >= ev.start_date && dateStr <= eventEndDate(ev));
+}
+// Every date covered by an event (spans capped at a year, just in case).
+function contextEventDates() {
+  const out = new Set();
+  contextEvents.forEach(ev => {
+    let d = ev.start_date;
+    for (let i = 0; d <= eventEndDate(ev) && i < 366; i++, d = addDaysStr(d, 1)) out.add(d);
+  });
+  return [...out];
+}
+function fmtEventSpan(ev) {
+  const f = d => new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return ev.end_date ? `${f(ev.start_date)} – ${f(ev.end_date)}` : f(ev.start_date);
+}
+
+function renderEventList() {
+  eventList.innerHTML = '';
+  if (!contextEvents.length) {
+    eventList.innerHTML = '<div class="medication-empty">No events logged yet.</div>';
+    return;
+  }
+  contextEvents.forEach(ev => {
+    const row = document.createElement('div');
+    row.className = 'event-item';
+    const span = document.createElement('span');
+    span.className = 'event-span';
+    span.textContent = fmtEventSpan(ev);
+    row.appendChild(span);
+    const badge = document.createElement('span');
+    badge.className = 'badge event';
+    badge.textContent = ev.category;
+    row.appendChild(badge);
+    if (ev.description) row.append(ev.description);
+    const actions = document.createElement('span');
+    actions.className = 'entry-actions';
+    const edit = document.createElement('button');
+    edit.className = 'delete-btn'; edit.textContent = 'edit';
+    edit.addEventListener('click', () => startEditEvent(ev));
+    const del = document.createElement('button');
+    del.className = 'delete-btn'; del.textContent = 'delete';
+    del.addEventListener('click', () => deleteEvent(ev.id));
+    actions.append(edit, del);
+    row.appendChild(actions);
+    eventList.appendChild(row);
+  });
+}
+
+async function loadContextEvents() {
+  const res = await fetch(`${API}/context-events`);
+  contextEvents = await res.json();
+  renderEventList();
+}
+
+function resetEventForm() {
+  editingEventId = null;
+  selectedEventCategory = null;
+  renderEventCategoryChips();
+  eventStart.value = todayStr();
+  eventEnd.value = '';
+  eventDesc.value = '';
+  eventSubmitBtn.textContent = 'Add event';
+  cancelEventEditBtn.hidden = true;
+}
+
+function startEditEvent(ev) {
+  editingEventId = ev.id;
+  selectedEventCategory = ev.category;
+  if (!eventCategories.includes(ev.category)) eventCategories.push(ev.category);
+  renderEventCategoryChips();
+  eventStart.value = ev.start_date;
+  eventEnd.value = ev.end_date || '';
+  eventDesc.value = ev.description || '';
+  eventSubmitBtn.textContent = 'Update event';
+  cancelEventEditBtn.hidden = false;
+  eventStatus.textContent = '';
+  contextDetails.open = true;
+  contextDetails.scrollIntoView && contextDetails.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+cancelEventEditBtn.addEventListener('click', () => { resetEventForm(); eventStatus.textContent = ''; });
+
+async function deleteEvent(id) {
+  if (!confirm('Delete this event?')) return;
+  await fetch(`${API}/context-events/${id}`, { method: 'DELETE' });
+  await loadContextEvents();
+  renderEntries();
+}
+
+contextForm.addEventListener('submit', async ev => {
+  ev.preventDefault();
+  eventStatus.textContent = '';
+  eventStatus.classList.remove('error');
+  if (!selectedEventCategory) { eventStatus.textContent = 'Pick what kind of event it was.'; eventStatus.classList.add('error'); return; }
+  if (!eventStart.value) { eventStatus.textContent = 'Pick a start date.'; eventStatus.classList.add('error'); return; }
+  if (eventEnd.value && eventEnd.value < eventStart.value) { eventStatus.textContent = "The end date can't be before the start date."; eventStatus.classList.add('error'); return; }
+  const editing = editingEventId !== null;
+  const payload = {
+    start_date: eventStart.value,
+    end_date: eventEnd.value || null,
+    category: selectedEventCategory,
+    description: eventDesc.value.trim() || null,
+  };
+  eventSubmitBtn.disabled = true;
+  try {
+    const res = await fetch(editing ? `${API}/context-events/${editingEventId}` : `${API}/context-events`, {
+      method: editing ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    resetEventForm();
+    await loadEventCategories();
+    await loadContextEvents();
+    renderEntries();
+    eventStatus.textContent = editing ? 'Updated.' : 'Added.';
+  } catch (err) {
+    eventStatus.textContent = 'Could not save — check your connection and try again.';
+    eventStatus.classList.add('error');
+  } finally {
+    eventSubmitBtn.disabled = false;
+  }
+});
+
 async function loadEntries() {
   const res = await fetch(`${API}/entries`);
   entries = await res.json();
@@ -2524,6 +2775,9 @@ async function loadWhoami() {
   renderWettingListForDate(dailyDateInput.value);
   await loadMedicationDoses();
   renderMedicationListForDate(dailyDateInput.value);
+  await loadEventCategories();
+  await loadContextEvents();
+  eventStart.value = todayStr();
   await loadEntries();
 })();
 </script>

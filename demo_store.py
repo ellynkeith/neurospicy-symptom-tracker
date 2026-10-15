@@ -4,6 +4,8 @@ from datetime import date, timedelta
 
 from models import (
     DEFAULT_CATEGORIES,
+    DEFAULT_EVENT_CATEGORIES,
+    ContextEventIn,
     DEFAULT_SITUATIONS,
     DailyLogIn,
     EntryIn,
@@ -31,6 +33,8 @@ class DemoStore:
         # name -> active. "old am meds" is hidden, to show off hide/unhide.
         self.medications = {"am meds": True, "pm meds": True, "vitamin d": True, "old am meds": False}
         self.medication_doses = []
+        self.event_categories = list(DEFAULT_EVENT_CATEGORIES)
+        self.context_events = []
         self._seed()
 
     def _next_id(self):
@@ -210,6 +214,67 @@ class DemoStore:
                     "skipped": row.get("skipped", False),
                 }
             )
+
+        self._seed_context_events(today)
+
+    def _seed_context_events(self, today):
+        seed = [
+            dict(start=12, end=10, category="illness", description="Cold, low energy"),
+            dict(start=4, end=None, category="medication change", description="Evening med moved 30 min earlier"),
+            dict(start=2, end=None, category="school break/day off", description="Teacher workday, no school"),
+        ]
+        for row in seed:
+            self.context_events.append({
+                "id": self._next_id(),
+                "start_date": (today - timedelta(days=row["start"])).isoformat(),
+                "end_date": (today - timedelta(days=row["end"])).isoformat() if row["end"] is not None else None,
+                "category": row["category"],
+                "description": row["description"],
+            })
+
+    def list_event_categories(self):
+        with self._lock:
+            return sorted(self.event_categories)
+
+    def create_event_category(self, name: str):
+        with self._lock:
+            if name not in self.event_categories:
+                self.event_categories.append(name)
+
+    def list_context_events(self):
+        with self._lock:
+            return sorted(self.context_events, key=lambda e: (e["start_date"], e["id"]), reverse=True)
+
+    def _event_row(self, event_id, ev: ContextEventIn):
+        return {
+            "id": event_id,
+            "start_date": ev.start_date.isoformat(),
+            "end_date": ev.end_date.isoformat() if ev.end_date else None,
+            "category": ev.category,
+            "description": ev.description,
+        }
+
+    def create_context_event(self, ev: ContextEventIn):
+        with self._lock:
+            if ev.category not in self.event_categories:
+                self.event_categories.append(ev.category)
+            row = self._event_row(self._next_id(), ev)
+            self.context_events.append(row)
+            return row
+
+    def update_context_event(self, event_id: int, ev: ContextEventIn):
+        with self._lock:
+            for i, row in enumerate(self.context_events):
+                if row["id"] == event_id:
+                    self.context_events[i] = self._event_row(event_id, ev)
+                    return self.context_events[i]
+            return None
+
+    def delete_context_event(self, event_id: int) -> bool:
+        with self._lock:
+            before = len(self.context_events)
+            self.context_events = [e for e in self.context_events if e["id"] != event_id]
+            return len(self.context_events) != before
 
     def list_entries(self):
         with self._lock:

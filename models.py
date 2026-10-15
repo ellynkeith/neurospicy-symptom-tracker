@@ -1,7 +1,7 @@
 from datetime import date, time
 from typing import List, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 # DSM-5 ODD's three symptom clusters (angry/irritable mood,
 # argumentative/defiant behavior, vindictiveness) plus the three ADHD
@@ -21,6 +21,17 @@ DEFAULT_CATEGORIES = [
 # demand/situation (not just "he got upset") is what makes the log useful
 # for spotting patterns. Grows over time via the same "+ new" chip pattern
 # as categories.
+# Starter list for the context log -- slow-moving things nothing else
+# captures, which are candidate drivers of multi-week good/bad phases.
+# Growable, like categories/situations.
+DEFAULT_EVENT_CATEGORIES = [
+    "illness",
+    "school break/day off",
+    "schedule change",
+    "visitors/travel",
+    "medication change",
+]
+
 DEFAULT_SITUATIONS = [
     "told no",
     "asked to transition off preferred activity",
@@ -228,3 +239,37 @@ class GapsOkIn(BaseModel):
         if len(value) > 400:
             raise ValueError("Too many dates")
         return value
+
+
+class EventCategoryIn(BaseModel):
+    name: str
+
+
+class ContextEventIn(BaseModel):
+    """A dated context-log event: one day (end_date omitted) or a span of
+    days (start_date..end_date, inclusive)."""
+    start_date: date
+    end_date: Optional[date] = None
+    category: str
+    description: Optional[str] = None
+
+    @field_validator("category")
+    @classmethod
+    def category_not_empty(cls, value: str) -> str:
+        cleaned = (value or "").strip().lower()
+        if not cleaned:
+            raise ValueError("category is required")
+        return cleaned
+
+    @field_validator("description")
+    @classmethod
+    def blank_description_to_none(cls, value: Optional[str]) -> Optional[str]:
+        return value.strip() if value and value.strip() else None
+
+    @model_validator(mode="after")
+    def end_not_before_start(self):
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("end_date can't be before start_date")
+        if self.end_date == self.start_date:
+            self.end_date = None
+        return self

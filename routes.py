@@ -13,6 +13,8 @@ from db import DATABASE_URL, get_conn
 from demo_store import demo_store
 from models import (
     CategoryIn,
+    ContextEventIn,
+    EventCategoryIn,
     DailyLogIn,
     EntryIn,
     GapsOkIn,
@@ -162,6 +164,114 @@ def create_category(category: CategoryIn, request: Request):
             )
         conn.commit()
     return {"name": name}
+
+
+# ---- context log: dated events (one day or a span) + growable categories ----
+@router.get("/api/event-categories")
+def list_event_categories(request: Request):
+    if is_demo(request):
+        return demo_store.list_event_categories()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT name FROM event_categories ORDER BY name")
+            rows = cur.fetchall()
+    return [r[0] for r in rows]
+
+
+@router.post("/api/event-categories")
+def create_event_category(body: EventCategoryIn, request: Request):
+    name = body.name.strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="Category name cannot be empty")
+    if is_demo(request):
+        demo_store.create_event_category(name)
+        return {"name": name}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO event_categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+                (name,),
+            )
+        conn.commit()
+    return {"name": name}
+
+
+@router.get("/api/context-events")
+def list_context_events(request: Request):
+    if is_demo(request):
+        return demo_store.list_context_events()
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, start_date, end_date, category, description, created_at "
+                "FROM context_events ORDER BY start_date DESC, id DESC"
+            )
+            return cur.fetchall()
+
+
+@router.post("/api/context-events")
+def create_context_event(ev: ContextEventIn, request: Request):
+    if is_demo(request):
+        return demo_store.create_context_event(ev)
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO context_events (start_date, end_date, category, description)
+                VALUES (%s, %s, %s, %s)
+                RETURNING *
+                """,
+                (ev.start_date, ev.end_date, ev.category, ev.description),
+            )
+            row = cur.fetchone()
+            # Keep the category list in step with what's used.
+            cur.execute(
+                "INSERT INTO event_categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+                (ev.category,),
+            )
+        conn.commit()
+    return row
+
+
+@router.put("/api/context-events/{event_id}")
+def update_context_event(event_id: int, ev: ContextEventIn, request: Request):
+    if is_demo(request):
+        row = demo_store.update_context_event(event_id, ev)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Event not found")
+        return row
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE context_events
+                SET start_date = %s, end_date = %s, category = %s, description = %s
+                WHERE id = %s
+                RETURNING *
+                """,
+                (ev.start_date, ev.end_date, ev.category, ev.description, event_id),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return row
+
+
+@router.delete("/api/context-events/{event_id}")
+def delete_context_event(event_id: int, request: Request):
+    if is_demo(request):
+        if not demo_store.delete_context_event(event_id):
+            raise HTTPException(status_code=404, detail="Event not found")
+        return {"deleted": event_id}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM context_events WHERE id = %s", (event_id,))
+            deleted = cur.rowcount
+        conn.commit()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"deleted": event_id}
 
 
 @router.get("/api/situations")
@@ -525,6 +635,11 @@ EXPORT_TABLES = {
         ["id", "entry_date", "incident_time", "setting", "response", "notes", "created_at"],
         "entry_date, incident_time NULLS LAST, id",
     ),
+    "context_events.csv": (
+        "context_events",
+        ["id", "start_date", "end_date", "category", "description", "created_at"],
+        "start_date, id",
+    ),
     "medication_doses.csv": (
         "medication_doses",
         ["id", "entry_date", "taken_time", "medications", "skipped", "notes", "created_at"],
@@ -560,6 +675,8 @@ def _demo_export_rows(filename):
         return sorted(demo_store.list_entries(), key=lambda r: key(r, "entry_time"))
     if filename == "daily.csv":
         return sorted(demo_store.list_daily_logs(), key=lambda r: r["entry_date"])
+    if filename == "context_events.csv":
+        return sorted(demo_store.list_context_events(), key=lambda r: (r["start_date"], r["id"]))
     if filename == "wetting_incidents.csv":
         return sorted(demo_store.list_wetting_incidents(), key=lambda r: key(r, "incident_time"))
     return sorted(demo_store.list_medication_doses(), key=lambda r: key(r, "taken_time"))
