@@ -172,7 +172,7 @@ class DemoStore:
                  notes="Refused to change out of wet clothes for a few minutes."),
             dict(days_ago=2, incident_time="10:00", setting="home", response="compliant", notes=None),
             dict(days_ago=5, incident_time="12:30", setting="school", response="not observed",
-                 notes="Teacher found wet clothes in her cubby at pickup."),
+                 notes="Teacher found wet clothes in her cubby at pickup.", time_approximate=True),
         ]
         for row in seed_wetting:
             entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
@@ -184,6 +184,7 @@ class DemoStore:
                     "setting": row["setting"],
                     "response": row["response"],
                     "notes": row["notes"],
+                    "time_approximate": row.get("time_approximate", False if row["incident_time"] else None),
                 }
             )
 
@@ -403,6 +404,7 @@ class DemoStore:
                 "setting": incident.setting,
                 "response": incident.response,
                 "notes": incident.notes,
+                "time_approximate": incident.time_approximate,
             }
             self.wetting_incidents.append(row)
             return row
@@ -416,6 +418,7 @@ class DemoStore:
                     row["setting"] = incident.setting
                     row["response"] = incident.response
                     row["notes"] = incident.notes
+                    row["time_approximate"] = incident.time_approximate
                     return row
             return None
 

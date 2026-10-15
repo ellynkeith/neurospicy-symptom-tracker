@@ -174,6 +174,9 @@ class WettingIncidentIn(BaseModel):
     # convention -- not enforced here either.
     setting: Optional[str] = None
     response: str
+    # True = incident_time is when it was noticed (so approximate), False =
+    # when it actually happened, None = unknown (older rows) or no time.
+    time_approximate: Optional[bool] = None
     # Freeform, optional -- anything the time/where/response fields don't
     # capture (e.g. what was going on right before, how she reacted after).
     notes: Optional[str] = None

@@ -461,6 +461,7 @@
   .med-copy-actions, .med-copy-done { margin-left: auto; }
   .med-copy-actions { display: flex; gap: 14px; }
   .time-unconfirmed { color: #9a7a3a; text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+  .time-kind { margin-top: 6px; font-size: 0.8rem; padding: 4px 6px; }
   .confirm-time-btn { color: var(--teal) !important; }
   .badge.skipped { background: transparent; border: 1px solid var(--line); color: var(--ink-soft); }
   .skip-check { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--ink-soft); margin: 2px 0 12px; }
@@ -626,6 +627,11 @@
         <div class="field">
           <label for="wettingTimeInput">Time</label>
           <input type="time" id="wettingTimeInput">
+          <select id="wettingTimeKind" class="time-kind" title="Is this when it happened, or when it was noticed?">
+            <option value="">Happened or noticed?</option>
+            <option value="happened">When it happened</option>
+            <option value="noticed">When noticed (approx.)</option>
+          </select>
         </div>
         <div class="field">
           <label for="wettingSettingSelect">Where</label>
@@ -980,6 +986,15 @@ async function loadDailyLogs() {
 // ---- wetting incidents (any number per date, unlike the single-value
 // sleep fields above -- each incident is its own row) ----
 const wettingTimeInput = document.getElementById('wettingTimeInput');
+const wettingTimeKind = document.getElementById('wettingTimeKind');
+// "~1:00 PM" when the recorded time is only when it was noticed.
+function fillWettingTime(el, w) {
+  el.textContent = (w.time_approximate ? '~' : '') + fmtTime(w.incident_time);
+  if (w.time_approximate) {
+    el.classList.add('time-unconfirmed');
+    el.title = 'Approximate — when it was noticed, not necessarily when it happened';
+  }
+}
 const wettingSettingSelect = document.getElementById('wettingSettingSelect');
 const wettingResponseSelect = document.getElementById('wettingResponseSelect');
 const wettingNotesInput = document.getElementById('wettingNotesInput');
@@ -1008,6 +1023,7 @@ function startEditWetting(w) {
   }
 
   wettingTimeInput.value = w.incident_time ? w.incident_time.slice(0, 5) : '';
+  wettingTimeKind.value = w.time_approximate === true ? 'noticed' : (w.time_approximate === false ? 'happened' : '');
   wettingSettingSelect.value = w.setting || '';
   wettingResponseSelect.value = w.response || '';
   wettingNotesInput.value = w.notes || '';
@@ -1029,6 +1045,7 @@ function endEditWetting() {
 cancelWettingEditBtn.addEventListener('click', () => {
   endEditWetting();
   wettingTimeInput.value = '';
+  wettingTimeKind.value = '';
   wettingSettingSelect.value = '';
   wettingResponseSelect.value = '';
   wettingNotesInput.value = '';
@@ -1052,7 +1069,7 @@ function renderWettingListForDate(dateStr) {
 
     const time = document.createElement('div');
     time.className = 'entry-time';
-    time.textContent = fmtTime(w.incident_time);
+    fillWettingTime(time, w);
     head.appendChild(time);
 
     const respBadge = document.createElement('span');
@@ -1118,6 +1135,12 @@ addWettingBtn.addEventListener('click', async () => {
     return;
   }
 
+  if (wettingTimeInput.value && !wettingTimeKind.value) {
+    wettingStatus.textContent = 'Say whether that time is when it happened or when it was noticed.';
+    wettingStatus.classList.add('error');
+    return;
+  }
+
   const isEditingWetting = editingWettingId !== null;
   const payload = {
     entry_date: isEditingWetting ? editingWettingEntryDate : dailyDateInput.value,
@@ -1125,6 +1148,7 @@ addWettingBtn.addEventListener('click', async () => {
     setting: wettingSettingSelect.value || null,
     response: wettingResponseSelect.value,
     notes: wettingNotesInput.value || null,
+    time_approximate: wettingTimeInput.value ? wettingTimeKind.value === 'noticed' : null,
   };
 
   addWettingBtn.disabled = true;
@@ -1137,6 +1161,7 @@ addWettingBtn.addEventListener('click', async () => {
     if (!res.ok) throw new Error(await res.text());
 
     wettingTimeInput.value = '';
+    wettingTimeKind.value = '';
     wettingSettingSelect.value = '';
     wettingResponseSelect.value = '';
     wettingNotesInput.value = '';
@@ -2043,7 +2068,7 @@ function renderEntries() {
 
       const wTime = document.createElement('div');
       wTime.className = 'entry-time';
-      wTime.textContent = fmtTime(w.incident_time);
+      fillWettingTime(wTime, w);
       wRow.appendChild(wTime);
 
       const wBody = document.createElement('div');

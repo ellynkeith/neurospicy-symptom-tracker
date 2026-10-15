@@ -406,8 +406,8 @@ def create_wetting_incident(incident: WettingIncidentIn, request: Request):
             cur.execute(
                 """
                 INSERT INTO wetting_incidents
-                    (entry_date, incident_time, setting, response, notes)
-                VALUES (%s, %s, %s, %s, %s)
+                    (entry_date, incident_time, setting, response, notes, time_approximate)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
@@ -416,6 +416,7 @@ def create_wetting_incident(incident: WettingIncidentIn, request: Request):
                     incident.setting,
                     incident.response,
                     incident.notes,
+                    incident.time_approximate,
                 ),
             )
             row = cur.fetchone()
@@ -435,7 +436,8 @@ def update_wetting_incident(incident_id: int, incident: WettingIncidentIn, reque
             cur.execute(
                 """
                 UPDATE wetting_incidents
-                SET entry_date = %s, incident_time = %s, setting = %s, response = %s, notes = %s
+                SET entry_date = %s, incident_time = %s, setting = %s, response = %s, notes = %s,
+                    time_approximate = %s
                 WHERE id = %s
                 RETURNING *
                 """,
@@ -445,6 +447,7 @@ def update_wetting_incident(incident_id: int, incident: WettingIncidentIn, reque
                     incident.setting,
                     incident.response,
                     incident.notes,
+                    incident.time_approximate,
                     incident_id,
                 ),
             )
@@ -656,7 +659,7 @@ EXPORT_TABLES = {
     ),
     "wetting_incidents.csv": (
         "wetting_incidents",
-        ["id", "entry_date", "incident_time", "setting", "response", "notes", "created_at"],
+        ["id", "entry_date", "incident_time", "time_approximate", "setting", "response", "notes", "created_at"],
         "entry_date, incident_time NULLS LAST, id",
     ),
     "context_events.csv": (

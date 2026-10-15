@@ -116,6 +116,12 @@ def init_db():
             cur.execute(
                 "ALTER TABLE wetting_incidents ADD COLUMN IF NOT EXISTS notes TEXT"
             )
+            # time_approximate (added 2026-10-15): the recorded time is often
+            # when an accident was noticed, not when it happened. NULL for
+            # everything logged before this existed.
+            cur.execute(
+                "ALTER TABLE wetting_incidents ADD COLUMN IF NOT EXISTS time_approximate BOOLEAN"
+            )
             # Growable vocabulary, same shape as categories/situations --
             # free text, no default seed data (unlike categories/situations,
             # there's no sensible universal starter list for medications).
