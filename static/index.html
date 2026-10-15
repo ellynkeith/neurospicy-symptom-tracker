@@ -277,7 +277,8 @@
   }
   .entry:last-child { border-bottom: none; }
   .entry-time {
-    width: 64px;
+    width: 72px;
+    white-space: nowrap;
     flex-shrink: 0;
     color: var(--ink-soft);
     font-size: 0.85rem;
@@ -459,6 +460,8 @@
   .med-copy-row .badge { white-space: nowrap; }
   .med-copy-actions, .med-copy-done { margin-left: auto; }
   .med-copy-actions { display: flex; gap: 14px; }
+  .time-unconfirmed { color: #9a7a3a; text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+  .confirm-time-btn { color: var(--teal) !important; }
   .badge.skipped { background: transparent; border: 1px solid var(--line); color: var(--ink-soft); }
   .skip-check { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--ink-soft); margin: 2px 0 12px; }
   .skip-check input { width: auto; margin: 0; }
@@ -1251,10 +1254,40 @@ const cancelMedicationEditBtn = document.getElementById('cancelMedicationEditBtn
 
 let editingMedicationId = null;
 let editingMedicationEntryDate = null;
+let editingMedicationOriginal = null;  // the dose as it was when edit started
+
+// Copied ("same as previous day") times are nominal until someone confirms
+// them. Shown as "~8:30 AM" with a one-tap confirm.
+function isUnconfirmedTime(d) {
+  return !d.skipped && d.taken_time && d.time_confirmed === false;
+}
+function fillDoseTime(el, d) {
+  el.textContent = (isUnconfirmedTime(d) ? '~' : '') + fmtTime(d.taken_time);
+  if (isUnconfirmedTime(d)) {
+    el.classList.add('time-unconfirmed');
+    el.title = 'Copied from an earlier day — not confirmed as the actual time';
+  }
+}
+function confirmTimeButton(d) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'delete-btn confirm-time-btn';
+  btn.textContent = 'confirm time';
+  btn.title = `Yes, ${fmtTime(d.taken_time)} is when she took it`;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    await fetch(`${API}/medication-doses/${d.id}/confirm-time`, { method: 'POST' });
+    await loadMedicationDoses();
+    renderMedicationListForDate(dailyDateInput.value);
+    renderEntries();
+  });
+  return btn;
+}
 
 function startEditMedication(d) {
   editingMedicationId = d.id;
   editingMedicationEntryDate = d.entry_date;
+  editingMedicationOriginal = d;
 
   dailyDetails.open = true;
   if (dailyDateInput.value !== d.entry_date) {
@@ -1277,7 +1310,19 @@ function startEditMedication(d) {
   if (dailyDetails.scrollIntoView) dailyDetails.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// Typed-in time = confirmed. When editing, a changed time is confirmed; an
+// untouched time keeps whatever it was (a copied time stays unconfirmed
+// until confirmed or changed).
+function doseTimeConfirmed(isEditing) {
+  const t = medicationTimeInput.value;
+  if (medicationSkippedInput.checked || !t) return null;
+  if (!isEditing || !editingMedicationOriginal) return true;
+  const orig = editingMedicationOriginal.taken_time ? editingMedicationOriginal.taken_time.slice(0, 5) : '';
+  return t !== orig ? true : (editingMedicationOriginal.time_confirmed ?? null);
+}
+
 function endEditMedication() {
+  editingMedicationOriginal = null;
   editingMedicationId = null;
   editingMedicationEntryDate = null;
   addMedicationBtn.textContent = 'Add dose';
@@ -1314,7 +1359,7 @@ function renderMedicationListForDate(dateStr) {
 
     const time = document.createElement('div');
     time.className = 'entry-time';
-    time.textContent = fmtTime(d.taken_time);
+    fillDoseTime(time, d);
     head.appendChild(time);
 
     if (d.skipped) {
@@ -1330,6 +1375,7 @@ function renderMedicationListForDate(dateStr) {
       head.appendChild(nameBadge);
     });
 
+    if (isUnconfirmedTime(d)) head.appendChild(confirmTimeButton(d));
     const editBtn = document.createElement('button');
     editBtn.className = 'delete-btn';
     editBtn.textContent = 'edit';
@@ -1382,6 +1428,8 @@ async function copyDoses(sources, dateStr, skipped = false) {
         medications: src.medications,
         notes: null,
         skipped,
+        // A copied time is the previous day's, not an observed one.
+        time_confirmed: skipped ? null : false,
       })
     });
     if (!res.ok) throw new Error(await res.text());
@@ -1519,6 +1567,7 @@ addMedicationBtn.addEventListener('click', async () => {
     medications: selectedMedications,
     notes: medicationNotesInput.value || null,
     skipped: medicationSkippedInput.checked,
+    time_confirmed: doseTimeConfirmed(isEditingMedication),
   };
 
   addMedicationBtn.disabled = true;
@@ -2051,7 +2100,7 @@ function renderEntries() {
 
       const dTime = document.createElement('div');
       dTime.className = 'entry-time';
-      dTime.textContent = fmtTime(d.taken_time);
+      fillDoseTime(dTime, d);
       dRow.appendChild(dTime);
 
       const dBody = document.createElement('div');
@@ -2077,6 +2126,7 @@ function renderEntries() {
       dEditBtn.className = 'delete-btn';
       dEditBtn.textContent = 'edit';
       dEditBtn.addEventListener('click', () => startEditMedication(d));
+      if (isUnconfirmedTime(d)) dActions.appendChild(confirmTimeButton(d));
       dActions.appendChild(dEditBtn);
       const dDelBtn = document.createElement('button');
       dDelBtn.className = 'delete-btn';

@@ -153,6 +153,20 @@ def init_db():
             cur.execute(
                 "ALTER TABLE medication_doses ADD COLUMN IF NOT EXISTS skipped BOOLEAN NOT NULL DEFAULT false"
             )
+            # time_confirmed (added 2026-10-15): False = time copied from a
+            # previous day, True = time entered/edited/confirmed by a person,
+            # NULL = unknown (everything logged before this column existed).
+            cur.execute(
+                "ALTER TABLE medication_doses ADD COLUMN IF NOT EXISTS time_confirmed BOOLEAN"
+            )
+            # The September backfill used routine times, not observed ones.
+            # Only touches still-unknown backfill rows, so it's a no-op after
+            # the first run and never undoes a confirmation. Removable once
+            # deployed.
+            cur.execute(
+                "UPDATE medication_doses SET time_confirmed = false "
+                "WHERE time_confirmed IS NULL AND notes = 'backfilled from routine'"
+            )
             # Context log (added 2026-10-15): dated events, one day or a span,
             # for slow-moving things nothing else captures (illness, school
             # breaks, travel, dose changes). Brand-new tables, so CREATE

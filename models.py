@@ -215,6 +215,11 @@ class MedicationDoseIn(BaseModel):
     # True = deliberately not taken. Recorded so "skipped" and "never
     # logged" stop looking identical.
     skipped: bool = False
+    # Was taken_time actually observed/entered (True), or carried over from a
+    # previous day by "same as previous day" (False)? None = unknown (doses
+    # logged before this existed) or no time at all. Dose-timing analysis
+    # should only trust True.
+    time_confirmed: Optional[bool] = None
 
     @field_validator("medications")
     @classmethod

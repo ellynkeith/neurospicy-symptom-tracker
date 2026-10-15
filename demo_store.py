@@ -189,7 +189,7 @@ class DemoStore:
             dict(days_ago=0, taken_time="08:00", medications=["am meds", "vitamin d"], notes=None),
             dict(days_ago=0, taken_time="15:30", medications=["pm meds"], notes=None),
             dict(days_ago=1, taken_time="08:05", medications=["am meds"], notes="Slightly late, hard time waking up."),
-            dict(days_ago=1, taken_time="15:30", medications=["pm meds"], notes=None),
+            dict(days_ago=1, taken_time="15:30", medications=["pm meds"], notes=None, time_confirmed=False),
             dict(days_ago=2, taken_time="08:00", medications=["am meds"], notes=None),
             dict(days_ago=3, taken_time="08:00", medications=["am meds"], notes=None),
             dict(days_ago=3, taken_time="15:40", medications=["pm meds"], notes=None),
@@ -212,6 +212,7 @@ class DemoStore:
                     "medications": list(row["medications"]),
                     "notes": row["notes"],
                     "skipped": row.get("skipped", False),
+                    "time_confirmed": row.get("time_confirmed", None if row.get("skipped") else True),
                 }
             )
 
@@ -455,6 +456,7 @@ class DemoStore:
                 "medications": list(dose.medications),
                 "notes": dose.notes,
                 "skipped": dose.skipped,
+                "time_confirmed": dose.time_confirmed,
             }
             self.medication_doses.append(row)
             return row
@@ -468,6 +470,15 @@ class DemoStore:
                     row["medications"] = list(dose.medications)
                     row["notes"] = dose.notes
                     row["skipped"] = dose.skipped
+                    row["time_confirmed"] = dose.time_confirmed
+                    return row
+            return None
+
+    def confirm_dose_time(self, dose_id: int):
+        with self._lock:
+            for row in self.medication_doses:
+                if row["id"] == dose_id:
+                    row["time_confirmed"] = True
                     return row
             return None
 
