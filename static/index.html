@@ -516,7 +516,7 @@
           <input type="date" id="entryDate" required>
         </div>
         <div class="field">
-          <label for="entryTime">Time</label>
+          <label for="entryTime">Time it happened</label>
           <input type="time" id="entryTime">
         </div>
       </div>
@@ -802,7 +802,9 @@ loggedByInput.addEventListener('change', () => {
 
 // ---- defaults ----
 document.getElementById('entryDate').value = todayStr();
-document.getElementById('entryTime').value = nowStr();
+// Entry time is deliberately NOT defaulted to "now": entries are often
+// logged hours later, and a default silently records the logging time
+// instead (a morning bus episode ended up at 2:10 PM). It's required.
 
 // ---- category chips (multi-select) ----
 let selectedCategories = new Set();
@@ -2753,12 +2755,12 @@ cancelEditBtn.addEventListener('click', () => {
   selectedIntensity = null;
   renderCategoryChips();
   renderSituationChips();
-  intensityPicker.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+  renderIntensity();
   document.getElementById('settingSelect').value = '';
   document.getElementById('durationInput').value = '';
   document.getElementById('notesInput').value = '';
   document.getElementById('entryDate').value = todayStr();
-  document.getElementById('entryTime').value = nowStr();
+  document.getElementById('entryTime').value = '';
   formStatus.textContent = '';
   formStatus.classList.remove('error');
 });
@@ -2824,6 +2826,12 @@ form.addEventListener('submit', async (ev) => {
     formStatus.classList.add('error');
     return;
   }
+  if (!document.getElementById('entryTime').value) {
+    formStatus.textContent = 'Add the time it happened (not when you are logging it).';
+    formStatus.classList.add('error');
+    document.getElementById('entryTime').focus();
+    return;
+  }
 
   const payload = {
     entry_date: document.getElementById('entryDate').value,
@@ -2857,7 +2865,7 @@ form.addEventListener('submit', async (ev) => {
     renderIntensity();
     document.getElementById('durationInput').value = '';
     document.getElementById('notesInput').value = '';
-    document.getElementById('entryTime').value = nowStr();
+    document.getElementById('entryTime').value = '';
 
     if (isEditing) {
       // Finishing an edit clears the date back to today too, so the form

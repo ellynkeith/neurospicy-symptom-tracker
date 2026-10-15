@@ -68,7 +68,9 @@ POSITIVE_CATEGORIES = {"good behavior", "good"}
 
 class EntryIn(BaseModel):
     entry_date: date
-    entry_time: Optional[time] = None
+    # Required (2026-10-15): the page no longer defaults it to "now", which
+    # recorded when an entry was logged rather than when it happened.
+    entry_time: time
     categories: List[str]
     setting: Optional[str] = None
     duration_minutes: Optional[int] = None
