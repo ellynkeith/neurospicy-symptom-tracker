@@ -159,6 +159,9 @@
   [hidden] { display: none !important; }  /* elements with their own display rule still honor hidden */
   .toolbar select { min-width: 160px; }
   .toolbar-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  .awakenings-row { display: flex; gap: 8px; align-items: center; }
+  .awakenings-row input { flex: 1; min-width: 0; }
+  .awakenings-row .chip { white-space: nowrap; }
   .jump-label { white-space: nowrap; display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--ink-soft); }
   .jump-label input { width: auto; padding: 6px 8px; }
   .day-filter-bar {
@@ -620,7 +623,10 @@
         </div>
         <div class="field">
           <label for="nightAwakeningsInput">Night awakenings</label>
-          <input type="number" id="nightAwakeningsInput" min="0" step="1" placeholder="e.g. 1">
+          <div class="awakenings-row">
+            <input type="number" id="nightAwakeningsInput" min="0" step="1" placeholder="blank = not recorded">
+            <button type="button" class="chip" id="noAwakeningsBtn" title="Slept through — records 0">None</button>
+          </div>
         </div>
       </div>
       <div class="submit-row">
@@ -957,6 +963,17 @@ const wakeTimeInput = document.getElementById('wakeTimeInput');
 const bedtimeInput = document.getElementById('bedtimeInput');
 const fellAsleepInput = document.getElementById('fellAsleepInput');
 const nightAwakeningsInput = document.getElementById('nightAwakeningsInput');
+// "None" records an explicit 0, so a blank field only ever means "not
+// recorded" (previously blank stood for both).
+const noAwakeningsBtn = document.getElementById('noAwakeningsBtn');
+function renderNoAwakenings() {
+  noAwakeningsBtn.classList.toggle('selected', nightAwakeningsInput.value === '0');
+}
+noAwakeningsBtn.addEventListener('click', () => {
+  nightAwakeningsInput.value = nightAwakeningsInput.value === '0' ? '' : '0';
+  renderNoAwakenings();
+});
+nightAwakeningsInput.addEventListener('input', renderNoAwakenings);
 const goodDayChip = document.getElementById('goodDayChip');
 const dayRatingPicker = document.getElementById('dayRatingPicker');
 const dayNotesInput = document.getElementById('dayNotesInput');
@@ -1020,6 +1037,7 @@ function populateDailyFormForDate(dateStr) {
   bedtimeInput.value = log && log.bedtime ? log.bedtime.slice(0, 5) : '';
   fellAsleepInput.value = log && log.fell_asleep_time ? log.fell_asleep_time.slice(0, 5) : '';
   nightAwakeningsInput.value = (log && log.night_awakenings != null) ? log.night_awakenings : '';
+  renderNoAwakenings();
   goodDay = !!(log && log.good_day);
   renderGoodDayChip();
   selectedDayRating = (log && log.day_rating != null) ? log.day_rating : null;
