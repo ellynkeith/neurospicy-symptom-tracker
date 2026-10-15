@@ -25,5 +25,17 @@ def on_startup():
     init_db()
 
 
+class RevalidatingStaticFiles(StaticFiles):
+    """Static files with Cache-Control: no-cache, so browsers check for a
+    newer page on every load instead of guessing (which left an old
+    index.html showing after deploys until a hard refresh). The check is a
+    cheap 304 when nothing changed, thanks to StaticFiles' ETag."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 # Serve the frontend last so it doesn't shadow the /api routes above.
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+app.mount("/", RevalidatingStaticFiles(directory="static", html=True), name="static")
