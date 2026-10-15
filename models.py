@@ -157,7 +157,10 @@ class DailyLogIn(BaseModel):
 # distinction, like exercise_type, rather than a growable vocabulary --
 # keeping it to a closed set is what makes a compliant-vs-noncompliant
 # pattern easy to spot over time.
-ALLOWED_WETTING_RESPONSES = {"compliant", "noncompliant", "other"}
+# "not observed" (added 2026-10-15): nobody was there to see how she
+# responded -- previously folded into "other". Existing rows are not
+# migrated; recategorize by hand.
+ALLOWED_WETTING_RESPONSES = {"compliant", "noncompliant", "not observed", "other"}
 
 
 class WettingIncidentIn(BaseModel):

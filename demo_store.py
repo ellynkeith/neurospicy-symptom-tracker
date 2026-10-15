@@ -171,6 +171,8 @@ class DemoStore:
             dict(days_ago=0, incident_time="14:15", setting="school", response="noncompliant",
                  notes="Refused to change out of wet clothes for a few minutes."),
             dict(days_ago=2, incident_time="10:00", setting="home", response="compliant", notes=None),
+            dict(days_ago=5, incident_time="12:30", setting="school", response="not observed",
+                 notes="Teacher found wet clothes in her cubby at pickup."),
         ]
         for row in seed_wetting:
             entry_date = (today - timedelta(days=row["days_ago"])).isoformat()
