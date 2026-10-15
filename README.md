@@ -20,6 +20,7 @@ Live at [behavior-tracker-st8g.onrender.com](https://behavior-tracker-st8g.onren
 - [x] What's Missing: a 14-day strip and per-day chips flag anything expected but not logged (wake-up time, bedtime, a day rating, usual medications), including days with nothing logged at all — tap a chip to fill it in, mark a dose as skipped, or mark a day as "nothing more to add". Quiet by design: complete days look the same as before
 - [x] Day-Grouped History: entries organized chronologically, newest first, in collapsible months (and past years) so the log stays scannable as it grows
 - [x] Category Filtering: narrow the log down to one category at a time
+- [x] Go to Date: pick a date to show just that day (or the nearest day with anything logged), then "Show all days" to return to the full list at that spot
 - [x] CSV Export: pull the behavior log (or a filtered slice) for appointments or school meetings
 - [x] Full Data Export: one click downloads a zip with a tidy CSV per table (behavior entries, daily context, wetting incidents, medication doses) — opens in Excel, loads straight into pandas, and doubles as a manual backup (also available at `GET /api/export`)
 - [x] Shared Login: household-wide password gate so the log isn't wide open to the internet

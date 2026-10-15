@@ -153,7 +153,17 @@
     flex-wrap: wrap;
     margin-bottom: 16px;
   }
+  [hidden] { display: none !important; }  /* elements with their own display rule still honor hidden */
   .toolbar select { min-width: 160px; }
+  .toolbar-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  .jump-label { white-space: nowrap; display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--ink-soft); }
+  .jump-label input { width: auto; padding: 6px 8px; }
+  .day-filter-bar {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px;
+    background: var(--paper-dim); border-radius: 3px;
+    padding: 8px 12px; margin: 0 0 16px; font-size: 0.85rem; color: var(--ink-soft);
+  }
+  .day-filter-bar b { color: var(--ink); font-weight: 600; }
   .link-btn {
     background: none;
     border: none;
@@ -663,13 +673,20 @@
   <section>
     <div class="toolbar">
       <div class="section-title" style="margin-bottom:0;">Entries</div>
-      <div style="display:flex; gap:12px; align-items:center;">
+      <div class="toolbar-tools">
+        <label class="jump-label" for="jumpDate">Go to
+          <input type="date" id="jumpDate" title="Show just this day">
+        </label>
         <select id="filterSelect">
           <option value="">All categories</option>
         </select>
         <button class="link-btn" id="exportBtn" title="Behavior entries only, respects the category filter">Export entries CSV</button>
         <button class="link-btn" id="exportAllBtn" title="Every table as its own CSV, zipped">Export all data</button>
       </div>
+    </div>
+    <div class="day-filter-bar" id="dayFilterBar" hidden>
+      <span id="dayFilterText"></span>
+      <button type="button" class="link-btn" id="dayFilterClear">Show all days</button>
     </div>
     <div class="gap-strip" id="gapStrip" hidden></div>
     <div id="entriesList"></div>
@@ -1666,6 +1683,8 @@ async function setGapsOk(dates, ok) {
 }
 
 function jumpToDay(dateStr) {
+  // While showing a single day, the strip switches which day is shown.
+  if (dayFilter && dayFilter !== dateStr) { goToDate(dateStr); return; }
   const y = dateStr.slice(0, 4);
   periodOpenState[dateStr.slice(0, 7)] = true;
   if (y !== String(new Date().getFullYear())) periodOpenState[y] = true;
@@ -1719,6 +1738,70 @@ function renderGapStrip() {
   gapStrip.appendChild(text);
 }
 
+// ---- go to date: show one day, with a way back to everything ----
+let dayFilter = null;
+const jumpDate = document.getElementById('jumpDate');
+const dayFilterBar = document.getElementById('dayFilterBar');
+const dayFilterText = document.getElementById('dayFilterText');
+
+// Every date with anything logged on it.
+function datesWithData() {
+  const s = new Set(entries.map(e => e.entry_date));
+  dailyLogs.forEach(l => { if (hasDailyContent(l)) s.add(l.entry_date); });
+  Object.keys(wettingByDate).forEach(d => s.add(d));
+  Object.keys(medicationsByDate).forEach(d => s.add(d));
+  if (typeof contextEventDates === 'function') contextEventDates().forEach(d => s.add(d));
+  return [...s].sort();
+}
+
+function daysBetween(a, b) {
+  return Math.round((new Date(a + 'T00:00:00') - new Date(b + 'T00:00:00')) / 86400000);
+}
+
+function goToDate(dateStr) {
+  if (!dateStr) { clearDayFilter(); return; }
+  const dates = datesWithData();
+  let target = dateStr;
+  let note = '';
+  if (!dates.includes(dateStr)) {
+    if (!dates.length) {
+      dayFilter = null;
+      dayFilterBar.hidden = false;
+      dayFilterText.textContent = 'Nothing has been logged yet.';
+      renderEntries();
+      return;
+    }
+    // Nearest day with data; on a tie, the earlier one.
+    target = dates.reduce((best, d) => {
+      const db = Math.abs(daysBetween(best, dateStr)), dd = Math.abs(daysBetween(d, dateStr));
+      return dd < db ? d : best;
+    });
+    note = `Nothing logged on ${fmtShortDay(dateStr)} — showing the nearest day. `;
+  }
+  dayFilter = target;
+  periodOpenState[target.slice(0, 7)] = true;
+  periodOpenState[target.slice(0, 4)] = true;
+  dayFilterBar.hidden = false;
+  dayFilterText.textContent = '';
+  dayFilterText.append(note + 'Showing ');
+  const b = document.createElement('b');
+  b.textContent = fmtDayHeading(target);
+  dayFilterText.append(b);
+  renderEntries();
+  dayFilterBar.scrollIntoView && dayFilterBar.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function clearDayFilter() {
+  const was = dayFilter;
+  dayFilter = null;
+  jumpDate.value = '';
+  dayFilterBar.hidden = true;
+  if (was) jumpToDay(was); else renderEntries();
+}
+
+jumpDate.addEventListener('change', () => goToDate(jumpDate.value));
+document.getElementById('dayFilterClear').addEventListener('click', clearDayFilter);
+
 function renderEntries() {
   completeness = computeCompleteness();
   renderGapStrip();
@@ -1754,6 +1837,14 @@ function renderEntries() {
         groups[dateStr] = [];
       }
     });
+  }
+
+  // "Go to date": narrow the list to a single day (keeping the category
+  // filter's effect on that day's behavior entries).
+  if (dayFilter) {
+    const only = groups[dayFilter] || filtered.filter(e => e.entry_date === dayFilter);
+    Object.keys(groups).forEach(k => delete groups[k]);
+    groups[dayFilter] = only;
   }
 
   entriesList.innerHTML = '';
