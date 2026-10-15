@@ -88,6 +88,12 @@ class DemoStore:
                 logged_by="Demo Teacher",
             ),
             dict(
+                days_ago=3, entry_time="19:15", categories=["good behavior"], setting="home",
+                duration_minutes=None, intensity=None, situations=["sibling conflict"],
+                notes="Sibling grabbed her blocks; she asked for them back calmly and offered a trade instead of yelling.",
+                logged_by="Demo Parent",
+            ),
+            dict(
                 days_ago=45, entry_time="16:10", categories=["angry/irritable"], setting="home",
                 duration_minutes=10, intensity=2, situations=["asked to transition off preferred activity"],
                 notes="Upset about turning off a game for dinner; calmed down with a five-minute warning next time.",

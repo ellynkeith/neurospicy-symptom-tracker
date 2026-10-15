@@ -61,6 +61,11 @@ def _clean_tag_list(value: List[str]) -> List[str]:
     return deduped
 
 
+# Positive-behavior categories. Entries tagged only with these get no
+# intensity (n/a) -- see EntryIn.positive_entries_have_no_intensity.
+POSITIVE_CATEGORIES = {"good behavior", "good"}
+
+
 class EntryIn(BaseModel):
     entry_date: date
     entry_time: Optional[time] = None
@@ -86,6 +91,14 @@ class EntryIn(BaseModel):
     @classmethod
     def clean_situations(cls, value: List[str]) -> List[str]:
         return _clean_tag_list(value)
+
+    @model_validator(mode="after")
+    def positive_entries_have_no_intensity(self):
+        # n/a is inferred from the categories, not stored: an entry whose
+        # categories are all positive never carries an intensity.
+        if self.categories and all(c in POSITIVE_CATEGORIES for c in self.categories):
+            self.intensity = None
+        return self
 
 
 class CategoryIn(BaseModel):

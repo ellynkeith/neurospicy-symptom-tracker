@@ -125,6 +125,9 @@
     font: inherit;
     color: var(--ink-soft);
   }
+  .intensity button:disabled { opacity: 0.4; cursor: default; }
+  .intensity button.intensity-na { flex: 1.3; font-size: 0.85rem; }
+  .intensity button.intensity-na.selected { opacity: 1; }
   .intensity button.selected {
     background: var(--teal);
     border-color: var(--teal);
@@ -548,6 +551,8 @@
           <button type="button" data-value="3">3</button>
           <button type="button" data-value="4">4</button>
           <button type="button" data-value="5">5</button>
+          <button type="button" data-value="na" class="intensity-na" disabled
+            title="n/a — used automatically when every category on the entry is positive (good behavior)">n/a</button>
         </div>
       </div>
 
@@ -841,6 +846,7 @@ function renderVocabChips(kind) {
     chip.addEventListener('click', () => {
       if (selected.has(v.name)) selected.delete(v.name); else selected.add(v.name);
       renderVocabChips(kind);
+      if (kind === 'categories') renderIntensity();
     });
     box.appendChild(chip);
   });
@@ -1678,15 +1684,32 @@ addMedicationBtn.addEventListener('click', async () => {
 });
 
 // ---- intensity picker ----
+// Positive entries don't get an intensity: when every selected category is
+// positive, the picker locks to "n/a" and the entry is saved with no
+// intensity (the server enforces the same rule). n/a is inferred from the
+// categories rather than stored, so a missing intensity on any other entry
+// still means "not rated".
+const POSITIVE_CATEGORIES = new Set(['good behavior', 'good']);
+function isPositiveOnly(cats) {
+  const list = [...cats];
+  return list.length > 0 && list.every(c => POSITIVE_CATEGORIES.has(c));
+}
 let selectedIntensity = null;
 const intensityPicker = document.getElementById('intensityPicker');
-intensityPicker.querySelectorAll('button').forEach(btn => {
+function renderIntensity() {
+  const na = isPositiveOnly(selectedCategories);
+  if (na) selectedIntensity = null;
+  intensityPicker.querySelectorAll('button').forEach(b => {
+    if (b.dataset.value === 'na') { b.classList.toggle('selected', na); return; }
+    b.disabled = na;
+    b.classList.toggle('selected', parseInt(b.dataset.value, 10) === selectedIntensity);
+  });
+}
+intensityPicker.querySelectorAll('button:not(.intensity-na)').forEach(btn => {
   btn.addEventListener('click', () => {
     const v = parseInt(btn.dataset.value, 10);
     selectedIntensity = (selectedIntensity === v) ? null : v;
-    intensityPicker.querySelectorAll('button').forEach(b => {
-      b.classList.toggle('selected', parseInt(b.dataset.value, 10) === selectedIntensity);
-    });
+    renderIntensity();
   });
 });
 
@@ -2683,9 +2706,7 @@ function startEditEntry(e) {
   renderSituationChips();
 
   selectedIntensity = e.intensity || null;
-  intensityPicker.querySelectorAll('button').forEach(b => {
-    b.classList.toggle('selected', parseInt(b.dataset.value, 10) === selectedIntensity);
-  });
+  renderIntensity();
 
   entrySectionTitle.textContent = 'Edit entry';
   submitBtn.textContent = 'Update entry';
@@ -2815,7 +2836,7 @@ form.addEventListener('submit', async (ev) => {
     selectedIntensity = null;
     renderCategoryChips();
     renderSituationChips();
-    intensityPicker.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+    renderIntensity();
     document.getElementById('durationInput').value = '';
     document.getElementById('notesInput').value = '';
     document.getElementById('entryTime').value = nowStr();
