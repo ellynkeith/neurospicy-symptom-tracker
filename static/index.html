@@ -518,6 +518,8 @@
       <div class="field">
         <label>Categories (pick one or more)</label>
         <div class="chips" id="categoryChips"></div>
+        <button type="button" class="link-btn manage-meds-btn" id="manageCategoriesBtn">Retire or restore categories</button>
+        <div class="manage-meds" id="manageCategoriesPanel" hidden></div>
       </div>
 
       <div class="row">
@@ -552,6 +554,8 @@
       <div class="field">
         <label>Situation / demand (optional)</label>
         <div class="chips" id="situationChips"></div>
+        <button type="button" class="link-btn manage-meds-btn" id="manageSituationsBtn">Retire or restore situations</button>
+        <div class="manage-meds" id="manageSituationsPanel" hidden></div>
       </div>
 
       <div class="field">
@@ -794,102 +798,151 @@ let selectedCategories = new Set();
 const categoryChips = document.getElementById('categoryChips');
 const filterSelect = document.getElementById('filterSelect');
 
-function renderCategoryChips() {
-  categoryChips.innerHTML = '';
-  categories.forEach(cat => {
+// ---- category & situation chips (multi-select). Both vocabularies are
+// growable and retire-don't-delete: GET returns [{name, active}]; retired
+// ones drop out of the picker but still show on (and when editing) the
+// entries that used them. ----
+let selectedSituations = new Set();
+const situationChips = document.getElementById('situationChips');
+let categoryVocab = [];
+let situationVocab = [];
+
+const VOCAB = {
+  categories: {
+    chips: () => categoryChips, selected: () => selectedCategories,
+    vocab: () => categoryVocab, setVocab: v => { categoryVocab = v; categories = v.filter(x => x.active).map(x => x.name); },
+    prompt: 'New category name:', manageLabel: 'categories',
+  },
+  situations: {
+    chips: () => situationChips, selected: () => selectedSituations,
+    vocab: () => situationVocab, setVocab: v => { situationVocab = v; situations = v.filter(x => x.active).map(x => x.name); },
+    prompt: 'New situation/demand name:', manageLabel: 'situations',
+  },
+};
+
+// Typing "wetting" as a new category sends people to the right form.
+function redirectToWettingForm() {
+  formStatus.textContent = "Wetting accidents go in Daily context → Wetting incidents, not as a category. Log any behavior around it here as a normal entry.";
+  formStatus.classList.add('error');
+  dailyDetails.open = true;
+  const w = document.querySelector('.wetting-section');
+  if (w && w.scrollIntoView) w.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function renderVocabChips(kind) {
+  const cfg = VOCAB[kind];
+  const box = cfg.chips();
+  const selected = cfg.selected();
+  box.innerHTML = '';
+  cfg.vocab().filter(v => v.active || selected.has(v.name)).forEach(v => {
     const chip = document.createElement('div');
-    chip.className = 'chip' + (selectedCategories.has(cat) ? ' selected' : '');
-    chip.textContent = cat;
+    chip.className = 'chip' + (selected.has(v.name) ? ' selected' : '') + (v.active ? '' : ' hidden-med');
+    chip.textContent = v.active ? v.name : `${v.name} (retired)`;
     chip.addEventListener('click', () => {
-      if (selectedCategories.has(cat)) {
-        selectedCategories.delete(cat);
-      } else {
-        selectedCategories.add(cat);
-      }
-      renderCategoryChips();
+      if (selected.has(v.name)) selected.delete(v.name); else selected.add(v.name);
+      renderVocabChips(kind);
     });
-    categoryChips.appendChild(chip);
+    box.appendChild(chip);
   });
   const addChip = document.createElement('div');
   addChip.className = 'chip add-new';
   addChip.textContent = '+ new';
   addChip.addEventListener('click', async () => {
-    const name = prompt('New category name:');
-    if (!name || !name.trim()) return;
-    await fetch(`${API}/categories`, {
+    const raw = prompt(cfg.prompt);
+    if (!raw || !raw.trim()) return;
+    const name = raw.trim().toLowerCase();
+    if (kind === 'categories' && name === 'wetting') { redirectToWettingForm(); return; }
+    const res = await fetch(`${API}/${kind}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() })
+      body: JSON.stringify({ name })
     });
-    await loadCategories();
-    selectedCategories.add(name.trim().toLowerCase());
-    renderCategoryChips();
+    if (!res.ok) {
+      let detail = 'Could not add that.';
+      try { detail = (await res.json()).detail || detail; } catch (e) {}
+      formStatus.textContent = detail;
+      formStatus.classList.add('error');
+      return;
+    }
+    await loadVocab(kind);
+    selected.add(name);
+    renderVocabChips(kind);
   });
-  categoryChips.appendChild(addChip);
+  box.appendChild(addChip);
+  if (!manageVocabPanels[kind].hidden) renderManageVocab(kind);
 }
+function renderCategoryChips() { renderVocabChips('categories'); }
+function renderSituationChips() { renderVocabChips('situations'); }
 
+// Filter dropdown: every category ever used, retired ones marked.
 function renderFilterOptions() {
   const current = filterSelect.value;
   filterSelect.innerHTML = '<option value="">All categories</option>';
-  categories.forEach(cat => {
+  const names = new Set(categoryVocab.map(v => v.name));
+  entries.forEach(e => (e.categories || []).forEach(c => names.add(c)));
+  const active = new Set(categories);
+  [...names].sort().forEach(cat => {
     const opt = document.createElement('option');
     opt.value = cat;
-    opt.textContent = cat;
+    opt.textContent = active.has(cat) ? cat : `${cat} (retired)`;
     filterSelect.appendChild(opt);
   });
   filterSelect.value = current;
 }
 
-async function loadCategories() {
-  const res = await fetch(`${API}/categories`);
-  categories = await res.json();
-  renderCategoryChips();
-  renderFilterOptions();
-}
-
-// ---- situation/demand chips (multi-select, optional) ----
-let selectedSituations = new Set();
-const situationChips = document.getElementById('situationChips');
-
-function renderSituationChips() {
-  situationChips.innerHTML = '';
-  situations.forEach(sit => {
-    const chip = document.createElement('div');
-    chip.className = 'chip' + (selectedSituations.has(sit) ? ' selected' : '');
-    chip.textContent = sit;
-    chip.addEventListener('click', () => {
-      if (selectedSituations.has(sit)) {
-        selectedSituations.delete(sit);
-      } else {
-        selectedSituations.add(sit);
-      }
-      renderSituationChips();
+// ---- retire / restore (same idea as hiding medications) ----
+const manageVocabPanels = {
+  categories: document.getElementById('manageCategoriesPanel'),
+  situations: document.getElementById('manageSituationsPanel'),
+};
+const manageVocabBtns = {
+  categories: document.getElementById('manageCategoriesBtn'),
+  situations: document.getElementById('manageSituationsBtn'),
+};
+function renderManageVocab(kind) {
+  const panel = manageVocabPanels[kind];
+  panel.innerHTML = '';
+  VOCAB[kind].vocab().forEach(v => {
+    const row = document.createElement('div');
+    row.className = 'manage-meds-row' + (v.active ? '' : ' is-hidden');
+    const name = document.createElement('span');
+    name.textContent = v.name;
+    row.appendChild(name);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'link-btn';
+    btn.textContent = v.active ? 'retire' : 'restore';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      await fetch(`${API}/${kind}/visibility`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: v.name, active: !v.active })
+      });
+      await loadVocab(kind);
     });
-    situationChips.appendChild(chip);
+    row.appendChild(btn);
+    panel.appendChild(row);
   });
-  const addChip = document.createElement('div');
-  addChip.className = 'chip add-new';
-  addChip.textContent = '+ new';
-  addChip.addEventListener('click', async () => {
-    const name = prompt('New situation/demand name:');
-    if (!name || !name.trim()) return;
-    await fetch(`${API}/situations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() })
-    });
-    await loadSituations();
-    selectedSituations.add(name.trim().toLowerCase());
-    renderSituationChips();
-  });
-  situationChips.appendChild(addChip);
 }
+Object.keys(manageVocabBtns).forEach(kind => {
+  const btn = manageVocabBtns[kind];
+  const label = btn.textContent;
+  btn.addEventListener('click', () => {
+    const panel = manageVocabPanels[kind];
+    panel.hidden = !panel.hidden;
+    btn.textContent = panel.hidden ? label : 'Done';
+    if (!panel.hidden) renderManageVocab(kind);
+  });
+});
 
-async function loadSituations() {
-  const res = await fetch(`${API}/situations`);
-  situations = await res.json();
-  renderSituationChips();
+async function loadVocab(kind) {
+  const res = await fetch(`${API}/${kind}`);
+  VOCAB[kind].setVocab(await res.json());
+  renderVocabChips(kind);
+  if (kind === 'categories') renderFilterOptions();
 }
+async function loadCategories() { await loadVocab('categories'); }
+async function loadSituations() { await loadVocab('situations'); }
 
 // ---- daily context (sleep, one row per date, independent of how many
 // behavior entries exist that day) ----
@@ -2593,6 +2646,7 @@ contextForm.addEventListener('submit', async ev => {
 async function loadEntries() {
   const res = await fetch(`${API}/entries`);
   entries = await res.json();
+  renderFilterOptions();  // include categories only found on past entries
   renderEntries();
 }
 

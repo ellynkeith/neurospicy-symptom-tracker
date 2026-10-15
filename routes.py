@@ -12,6 +12,7 @@ from auth import is_demo, is_read_only
 from db import DATABASE_URL, get_conn
 from demo_store import demo_store
 from models import (
+    BLOCKED_CATEGORY_NAMES,
     CategoryIn,
     ContextEventIn,
     EventCategoryIn,
@@ -22,6 +23,7 @@ from models import (
     MedicationIn,
     MedicationVisibilityIn,
     SituationIn,
+    VocabVisibilityIn,
     WettingIncidentIn,
 )
 
@@ -143,9 +145,9 @@ def list_categories(request: Request):
         return demo_store.list_categories()
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT name FROM categories ORDER BY name")
+            cur.execute("SELECT name, active FROM categories ORDER BY name")
             rows = cur.fetchall()
-    return [r[0] for r in rows]
+    return [{"name": r[0], "active": r[1]} for r in rows]
 
 
 @router.post("/api/categories")
@@ -153,17 +155,47 @@ def create_category(category: CategoryIn, request: Request):
     name = category.name.strip().lower()
     if not name:
         raise HTTPException(status_code=400, detail="Category name cannot be empty")
+    if name in BLOCKED_CATEGORY_NAMES:
+        raise HTTPException(status_code=400, detail=BLOCKED_CATEGORY_NAMES[name])
     if is_demo(request):
         demo_store.create_category(name)
         return {"name": name}
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO categories (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+                # Re-adding a retired one by name brings it back.
+                "INSERT INTO categories (name) VALUES (%s) ON CONFLICT (name) DO UPDATE SET active = true",
                 (name,),
             )
         conn.commit()
     return {"name": name}
+
+
+# Retire/restore a category or situation (body, not path: names contain "/").
+def _set_vocab_active(table: str, body: VocabVisibilityIn, request: Request):
+    name = body.name.strip().lower()
+    if is_demo(request):
+        if not demo_store.set_vocab_active(table, name, body.active):
+            raise HTTPException(status_code=404, detail="Not found")
+        return {"name": name, "active": body.active}
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"UPDATE {table} SET active = %s WHERE name = %s", (body.active, name))
+            updated = cur.rowcount
+        conn.commit()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"name": name, "active": body.active}
+
+
+@router.post("/api/categories/visibility")
+def set_category_visibility(body: VocabVisibilityIn, request: Request):
+    return _set_vocab_active("categories", body, request)
+
+
+@router.post("/api/situations/visibility")
+def set_situation_visibility(body: VocabVisibilityIn, request: Request):
+    return _set_vocab_active("situations", body, request)
 
 
 # ---- context log: dated events (one day or a span) + growable categories ----
@@ -280,9 +312,9 @@ def list_situations(request: Request):
         return demo_store.list_situations()
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT name FROM situations ORDER BY name")
+            cur.execute("SELECT name, active FROM situations ORDER BY name")
             rows = cur.fetchall()
-    return [r[0] for r in rows]
+    return [{"name": r[0], "active": r[1]} for r in rows]
 
 
 @router.post("/api/situations")
@@ -296,7 +328,8 @@ def create_situation(situation: SituationIn, request: Request):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO situations (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+                # Re-adding a retired one by name brings it back.
+                "INSERT INTO situations (name) VALUES (%s) ON CONFLICT (name) DO UPDATE SET active = true",
                 (name,),
             )
         conn.commit()

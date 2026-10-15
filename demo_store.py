@@ -24,8 +24,10 @@ class DemoStore:
     def __init__(self):
         self._lock = threading.Lock()
         self._id_counter = itertools.count(1)
-        self.categories = list(DEFAULT_CATEGORIES)
-        self.situations = list(DEFAULT_SITUATIONS)
+        # name -> active. Retired ones stay on old entries but leave the picker.
+        self.categories = {c: True for c in DEFAULT_CATEGORIES}
+        self.categories.update({"good behavior": True, "wetting": False})
+        self.situations = {s: True for s in DEFAULT_SITUATIONS}
         self.entries = []
         self.daily_logs = {}
         self.wetting_incidents = []
@@ -329,21 +331,27 @@ class DemoStore:
 
     def list_categories(self):
         with self._lock:
-            return sorted(self.categories)
+            return [{"name": n, "active": a} for n, a in sorted(self.categories.items())]
 
     def create_category(self, name: str):
         with self._lock:
-            if name not in self.categories:
-                self.categories.append(name)
+            self.categories[name] = True
 
     def list_situations(self):
         with self._lock:
-            return sorted(self.situations)
+            return [{"name": n, "active": a} for n, a in sorted(self.situations.items())]
 
     def create_situation(self, name: str):
         with self._lock:
-            if name not in self.situations:
-                self.situations.append(name)
+            self.situations[name] = True
+
+    def set_vocab_active(self, table: str, name: str, active: bool) -> bool:
+        with self._lock:
+            vocab = self.categories if table == "categories" else self.situations
+            if name not in vocab:
+                return False
+            vocab[name] = active
+            return True
 
     def list_daily_logs(self):
         with self._lock:

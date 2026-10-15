@@ -11,6 +11,7 @@ Live at [behavior-tracker-st8g.onrender.com](https://behavior-tracker-st8g.onren
 ## What It Tracks ##
 - [x] Shared Logging: any household device can add entries, no install or account creation required
 - [x] Custom Categories: seeded with an evidence-based taxonomy matched to this kid's actual evaluated profile — DSM-5 ODD's three clusters (angry/irritable, argumentative/defiant, vindictive) plus the three ADHD presentations (impulsive, inattentive, hyperactive/restless) — add your own on the fly
+- [x] Retire, Don't Delete: categories and situations that no longer fit can be retired — they leave the picker but stay on (and filterable in) the entries that used them, and can be restored any time. Wetting accidents are logged as wetting incidents, not as a behavior category
 - [x] Multi-Category Tagging: tag one entry with more than one category at once (e.g. angry/irritable + argumentative/defiant)
 - [x] Situation/Demand Tagging: optionally tag what was going on right before (told no, a non-preferred task demand, sibling conflict, an unexpected change in plans, etc.) from a growable structured list, so situations can be clustered and compared instead of living in unstructured freeform text
 - [x] Rich Entry Detail: date, time, setting, duration, 1–5 intensity scale, freeform notes, and who logged it

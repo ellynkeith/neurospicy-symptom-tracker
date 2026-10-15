@@ -284,3 +284,19 @@ class ContextEventIn(BaseModel):
         if self.end_date == self.start_date:
             self.end_date = None
         return self
+
+
+# Names that must not be (re)added as behavior categories, with the reason
+# shown to whoever tries. Accidents live in the wetting-incidents table;
+# behavior around an accident is a normal entry.
+BLOCKED_CATEGORY_NAMES = {
+    "wetting": "Wetting accidents are logged as wetting incidents in the Daily context panel, not as a behavior category. Log any behavior around the accident as a normal entry.",
+}
+
+
+class VocabVisibilityIn(BaseModel):
+    """Retire (active=false) or restore a category or situation. Retired
+    ones are never deleted -- past entries keep them and still render --
+    they just drop out of the picker."""
+    name: str
+    active: bool

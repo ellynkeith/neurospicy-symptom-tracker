@@ -173,6 +173,30 @@ def init_db():
                 "UPDATE medication_doses SET time_confirmed = false "
                 "WHERE time_confirmed IS NULL AND notes = 'backfilled from routine'"
             )
+            # Retire-don't-delete for categories and situations (added
+            # 2026-10-15), same pattern as medications.active. The one-time
+            # retirements below run only in the same startup that first adds
+            # the column, so a later un-retire is never undone:
+            #   "wetting" -- accidents live in wetting_incidents now
+            #   "good"    -- duplicate of "good behavior"
+            for table, retire in (("categories", ("wetting", "good")), ("situations", ())):
+                cur.execute(
+                    """
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = %s AND column_name = 'active'
+                    """,
+                    (table,),
+                )
+                first_time = cur.fetchone() is None
+                cur.execute(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true"
+                )
+                if first_time and retire:
+                    cur.execute(
+                        f"UPDATE {table} SET active = false WHERE name = ANY(%s)",
+                        (list(retire),),
+                    )
             # Context log (added 2026-10-15): dated events, one day or a span,
             # for slow-moving things nothing else captures (illness, school
             # breaks, travel, dose changes). Brand-new tables, so CREATE
