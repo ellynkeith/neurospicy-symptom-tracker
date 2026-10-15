@@ -400,6 +400,8 @@
     margin: -2px 0 10px;
   }
   .daily-summary-notes { margin: -6px 0 10px; }
+  .day-notes-label { font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-soft); }
+  .day-notes-link { font-size: 0.8rem; margin-top: 4px; padding: 0; text-align: left; }
   .day-empty {
     color: var(--ink-soft);
     font-size: 0.85rem;
@@ -569,6 +571,7 @@
       <div class="field">
         <label for="notesInput">Notes</label>
         <textarea id="notesInput" placeholder="What happened, what helped, anything else worth remembering"></textarea>
+        <button type="button" class="link-btn day-notes-link" id="dayNotesLink">Notes about the whole day go in the day's comments instead →</button>
       </div>
 
       <div class="submit-row">
@@ -979,6 +982,20 @@ nightAwakeningsInput.addEventListener('input', renderNoAwakenings);
 const goodDayChip = document.getElementById('goodDayChip');
 const dayRatingPicker = document.getElementById('dayRatingPicker');
 const dayNotesInput = document.getElementById('dayNotesInput');
+// A behavior entry is one incident; a summary of the whole day belongs in
+// the day's comments. This link takes you there for the entry's date.
+document.getElementById('dayNotesLink').addEventListener('click', () => {
+  const dateStr = document.getElementById('entryDate').value || todayStr();
+  dailyDetails.open = true;
+  if (dailyDateInput.value !== dateStr) {
+    dailyDateInput.value = dateStr;
+    renderWettingListForDate(dateStr);
+    renderMedicationListForDate(dateStr);
+    populateDailyFormForDate(dateStr);
+  }
+  dayNotesInput.scrollIntoView && dayNotesInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  dayNotesInput.focus({ preventScroll: true });
+});
 
 // ---- day-level outcome: "had a good day" marker + optional 1-5 rating ----
 let goodDay = false;
@@ -2149,7 +2166,10 @@ function renderEntries() {
       if (dailyLog.day_notes) {
         const dayNotes = document.createElement('div');
         dayNotes.className = 'entry-notes daily-summary-notes';
-        dayNotes.textContent = dailyLog.day_notes;
+        const lbl = document.createElement('span');
+        lbl.className = 'day-notes-label';
+        lbl.textContent = 'About the day: ';
+        dayNotes.append(lbl, dailyLog.day_notes);
         group.appendChild(dayNotes);
       }
     }
