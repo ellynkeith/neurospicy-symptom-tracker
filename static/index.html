@@ -474,6 +474,7 @@
   .badge.skipped { background: transparent; border: 1px solid var(--line); color: var(--ink-soft); }
   .skip-check { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--ink-soft); margin: 2px 0 12px; }
   .skip-check input { width: auto; margin: 0; }
+  .med-copy-note { font-size: 0.78rem; color: var(--ink-soft); font-style: italic; }
   .med-copy-done { font-size: 0.8rem; color: var(--ink-soft); font-style: italic; }
   .chip.hidden-med.selected { color: #fff; }
   .manage-meds-btn { margin-top: 8px; padding: 0; }
@@ -1566,6 +1567,31 @@ function copySourceDate(dateStr) {
     .pop();
 }
 
+// What "same as <day>" offers: that day's taken doses, plus anything that
+// was skipped that day (a skip is usually a one-off, so the next day still
+// expects it -- leaving it out is how a missed long-acting dose went
+// unnoticed). A skipped med is offered at the last time it was actually
+// taken, or with no time if it never was.
+function copySources(sourceDate) {
+  const doses = medicationsByDate[sourceDate] || [];
+  const taken = doses.filter(x => !x.skipped);
+  const takenMeds = new Set(taken.flatMap(x => x.medications || []));
+  const extra = [];
+  doses.filter(x => x.skipped).forEach(x => {
+    const meds = (x.medications || []).filter(m => !takenMeds.has(m));
+    if (!meds.length) return;
+    let time = null;
+    Object.keys(medicationsByDate).filter(d => d < sourceDate).sort().reverse().some(d =>
+      (medicationsByDate[d] || []).some(y => {
+        if (!y.skipped && y.taken_time && meds.some(m => (y.medications || []).includes(m))) { time = y.taken_time; return true; }
+        return false;
+      }));
+    extra.push({ medications: meds, taken_time: time, wasSkipped: true });
+  });
+  return [...taken, ...extra]
+    .sort((a, b) => (a.taken_time || '99').localeCompare(b.taken_time || '99'));
+}
+
 function renderMedCopyPanel(dateStr) {
   medCopyPanel.innerHTML = '';
   medCopyPanel.hidden = true;
@@ -1574,8 +1600,7 @@ function renderMedCopyPanel(dateStr) {
   if (!sourceDate) return;
 
   const targetDoses = medicationsByDate[dateStr] || [];
-  const sources = medicationsByDate[sourceDate].filter(x => !x.skipped)
-    .sort((a, b) => (a.taken_time || '99').localeCompare(b.taken_time || '99'));
+  const sources = copySources(sourceDate);
   const missing = sources.filter(s => !doseAlreadyLogged(s, targetDoses));
   if (!missing.length) return;  // everything from that day is already here
 
@@ -1609,6 +1634,12 @@ function renderMedCopyPanel(dateStr) {
       b.textContent = med;
       row.appendChild(b);
     });
+    if (src.wasSkipped) {
+      const note = document.createElement('span');
+      note.className = 'med-copy-note';
+      note.textContent = '(skipped that day)';
+      row.appendChild(note);
+    }
     if (doseAlreadyLogged(src, targetDoses)) {
       const done = document.createElement('span');
       done.className = 'med-copy-done';
@@ -2303,7 +2334,7 @@ function renderEntries() {
         sameBtn.className = 'link-btn stub-action';
         sameBtn.textContent = `Same meds as ${fmtShortDay(srcDate)}`;
         sameBtn.addEventListener('click', () =>
-          runCopy(medicationsByDate[srcDate].filter(x => !x.skipped), dateStr, sameBtn));
+          runCopy(copySources(srcDate), dateStr, sameBtn));
         stub.appendChild(sameBtn);
       }
       const goodBtn = document.createElement('button');
