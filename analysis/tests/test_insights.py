@@ -8,12 +8,14 @@ from tracker_analysis import Overrides, Params, build, load_tables, phase_line
 from test_transform import C_COLS, D_COLS, E_COLS, M_COLS, W_COLS, df
 
 
-def raw(ratings, doses=()):
-    """Days from 2026-03-01 with the given ratings ("" = unrated, "g" = good-day only)."""
+def raw(ratings, doses=(), sleep=None):
+    """Days from 2026-03-01 with the given ratings ("" = unrated, "g" = good-day only).
+    sleep: {day_index: (wake, bedtime, fell_asleep)} as "HH:MM:SS" or ""."""
     days = []
     for i, r in enumerate(ratings):
         d = f"2026-03-{i + 1:02d}"
-        days.append([d, "true" if r == "g" else "", "" if r in ("", "g") else r, "", "", "", "", "", "", "", ""])
+        wk, bed, fell = (sleep or {}).get(i, ("", "", ""))
+        days.append([d, "true" if r == "g" else "", "" if r in ("", "g") else r, "", wk, bed, fell, "", "", "", ""])
     return {
         "entries": df([["1", "2026-03-02", "09:00:00", "defiant", "home", "", "3", "", "", "A",
                         "2026-03-02 14:00:00+00:00"]], E_COLS),
@@ -26,8 +28,8 @@ def raw(ratings, doses=()):
 
 
 class PhaseLineTests(unittest.TestCase):
-    def phase(self, ratings, through, partial=None, doses=()):
-        res = build(raw(ratings, doses), Overrides(), Params(through=through))
+    def phase(self, ratings, through, partial=None, doses=(), sleep=None):
+        res = build(raw(ratings, doses, sleep), Overrides(), Params(through=through))
         return phase_line(res, partial_day=partial)
 
     def test_matches_centred_rolling_mean(self):
@@ -66,6 +68,19 @@ class PhaseLineTests(unittest.TestCase):
         self.assertTrue(out["days"][-1]["partial"])
         out = self.phase(["3", "3", "3"], "2026-03-03", doses=doses)
         self.assertEqual([m["change"] for m in out["med_changes"]], ["stopped"])
+
+    def test_sleep_is_the_night_before(self):
+        sleep = {0: ("", "21:00:00", "21:30:00"),          # evening of day 1
+                 1: ("07:00:00", "00:30:00", ""),          # wake day 2; bed after midnight, no fell-asleep
+                 2: ("06:00:00", "", "")}                  # wake day 3
+        out = self.phase(["3", "3", "3"], "2026-03-03", sleep=sleep)
+        d1, d2, d3 = out["days"]
+        self.assertIsNone(d1["sleep"])                    # nothing logged the night before day 1
+        self.assertEqual(d2["sleep"], {"bed": 1260, "asleep": 1290, "wake": 1860, "hours": 9.5,
+                                       "latency": 30, "flagged": False, "onset_is_bedtime": False})
+        self.assertEqual(d3["sleep"]["bed"], 1470)          # 00:30 sits after midnight
+        self.assertTrue(d3["sleep"]["onset_is_bedtime"])
+        self.assertEqual(d3["sleep"]["hours"], 5.5)        # 00:30 -> 06:00
 
     def test_counts_and_json_safe(self):
         out = self.phase(["3", "3"], "2026-03-02")

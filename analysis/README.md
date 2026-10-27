@@ -86,6 +86,9 @@ would produce, read with `load_tables`) and returns `insights.phase_line(result)
   days in the window, with and without imputed good-day-only days (D02). Same
   definition as the notebook.
 - Context events and medication changes (M03) in the plotted range.
+- Sleep for each day is **the night before it** (bedtime D-1 → wake D, the same alignment as
+  `sleep_prev_night_hr`), so a rough night sits under the day that followed. Clock values are
+  minutes after midnight of the evening's date; nights with implausible latency (D03) are flagged.
 - Today is passed as a partial day: its counts are incomplete, and a "stopped"
   medication dated today only means today's doses aren't logged yet, so it's dropped.
 

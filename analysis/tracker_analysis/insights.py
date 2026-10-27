@@ -48,6 +48,14 @@ def phase_line(result: Result, partial_day: str | None = None) -> dict:
     mean_rated = D["rating"].rolling(WINDOW, center=True, min_periods=MIN_DAYS).mean()
     D["mean"] = mean_all
     D["mean_rated"] = mean_rated
+    # Sleep shown on day D is the night BEFORE D (bedtime D-1 -> wake D), the
+    # same alignment as transform's sleep_prev_night_hr, so a rough night sits
+    # under the day that followed it. Clock values are minutes after midnight
+    # of D-1: bedtime/onset are already in that frame (D03), wake gets +1440.
+    # Days are consecutive, so shift(1) is "the previous evening".
+    prev = D[["bedtime_min", "fell_asleep_min", "sleep_latency_min", "night_sleep_hr",
+              "sleep_implausible", "night_onset_from_bedtime"]].shift(1)
+    wake = D["wake_min"] + 1440
 
     rated = D["rating_filled"].notna()
     out = {
@@ -65,7 +73,20 @@ def phase_line(result: Result, partial_day: str | None = None) -> dict:
     first, last = D["date"].iloc[0], D["date"].iloc[-1]
     out["summary"].update(first_day=first, last_day=last)
 
-    for r in D.itertuples(index=False):
+    prev = prev.loc[D.index]
+    wake = wake.loc[D.index]
+    for (r, (_, p), w) in zip(D.itertuples(index=False), prev.iterrows(), wake):
+        sleep = None
+        if pd.notna(p["bedtime_min"]) or pd.notna(p["fell_asleep_min"]) or pd.notna(w):
+            sleep = {
+                "bed": _clean(p["bedtime_min"]),
+                "asleep": _clean(p["fell_asleep_min"]),
+                "wake": _clean(w),
+                "hours": _round(p["night_sleep_hr"]),
+                "latency": _clean(p["sleep_latency_min"]),
+                "flagged": bool(p["sleep_implausible"]) if pd.notna(p["sleep_implausible"]) else False,
+                "onset_is_bedtime": bool(p["night_onset_from_bedtime"]) if pd.notna(p["night_onset_from_bedtime"]) else False,
+            }
         out["days"].append({
             "date": r.date,
             "rating": _clean(r.rating_filled),
@@ -76,6 +97,7 @@ def phase_line(result: Result, partial_day: str | None = None) -> dict:
             "n_positive": int(r.n_positive) if "n_positive" in D else 0,
             "max_intensity": _clean(getattr(r, "max_intensity", None)),
             "partial": r.date == partial_day,
+            "sleep": sleep,  # the night before this day; None if nothing logged
         })
 
     cd = result.tables["context_days"]

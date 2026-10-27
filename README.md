@@ -29,7 +29,7 @@ Live at [behavior-tracker-st8g.onrender.com](https://behavior-tracker-st8g.onren
 - [x] Read-Only Login: an optional second login (`VIEWER_PASSWORD`) that can see and export the real log but not change it — for a co-parent, grandparent, or clinician. The server refuses every write from that login; the page just hides the editing controls
 - [x] Demo Mode: a separate login serves sample data so anyone can see how it works without seeing (or risking) the real log
 - [x] Tabs: Log, History and Insights, with the tab in the URL so refresh, bookmarks and the back button keep your place
-- [x] Insights, phase line: the day rating's 7-day average (with and without "good day"-only days), daily behavior-entry counts, context events and medication changes on one timeline; recomputed every time the tab opens, with a table view
+- [x] Insights, phase line: the day rating's 7-day average (with and without "good day"-only days), daily behavior-entry counts, the night before each day's sleep (bedtime, falling asleep, waking), context events and medication changes on one timeline; recomputed every time the tab opens, with a table view
 - [ ] More insights: frequency by category, trends by setting or time of day, common situations/demands, correlations with sleep and medication timing
 - [ ] Automated Backups: beyond the manual CSV export
 - [ ] Per-Person Accounts: currently one shared household login

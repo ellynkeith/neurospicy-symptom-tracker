@@ -108,6 +108,7 @@
     --chart-avg: #00897b;
     --chart-bar: #c9783a;
     --chart-grid: #e7dfcf;
+    --chart-sleep: #6a64c4;
   }
   .insight-card { position: relative; margin-bottom: 28px; }
   .insight-title { font-size: 1.15rem; margin-bottom: 2px; }
@@ -903,6 +904,8 @@
       <div class="chart" id="phaseChart" tabindex="0" role="img" aria-label="Day rating chart. Use the left and right arrow keys to step through days."></div>
       <div class="chart-label">Behavior entries per day (good-behavior entries not counted)</div>
       <div class="chart" id="entriesChart" aria-hidden="true"></div>
+      <div class="chart-label">Sleep the night before: bar = asleep → woke up, thin line = in bed, not yet asleep</div>
+      <div class="chart" id="sleepChart" aria-hidden="true"></div>
       <div class="chart-tip" id="chartTip" aria-live="polite"></div>
       <p class="insight-note" id="phaseNote"></p>
       <details class="insight-table">
@@ -3192,6 +3195,7 @@ const insightsEmpty = document.getElementById('insightsEmpty');
 const insightsStatus = document.getElementById('insightsStatus');
 const phaseChartEl = document.getElementById('phaseChart');
 const entriesChartEl = document.getElementById('entriesChart');
+const sleepChartEl = document.getElementById('sleepChart');
 const chartTip = document.getElementById('chartTip');
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let insightsData = null;
@@ -3355,6 +3359,54 @@ function renderInsights() {
   });
   crosshairs.push(svgEl('line', { x1: 0, x2: 0, y1: top2, y2: top2 + plotH2, stroke: 'var(--ink)', 'stroke-width': 1, opacity: 0, 'pointer-events': 'none' }, svg2));
 
+  // -------- sleep chart: the night before each day, on a clock axis.
+  // Clock values are minutes after midnight of the previous evening's date,
+  // so 21:00 = 1260 and 07:00 next morning = 1860.
+  sleepChartEl.innerHTML = '';
+  const clocks = [];
+  for (const d of days) if (d.sleep) for (const k of ['bed', 'asleep', 'wake']) if (d.sleep[k] != null) clocks.push(d.sleep[k]);
+  if (!clocks.length) {
+    const p = document.createElement('p');
+    p.className = 'insight-note';
+    p.textContent = 'No sleep times logged in this range.';
+    sleepChartEl.append(p);
+  } else {
+    const lo = Math.floor(Math.min(...clocks) / 60) * 60, hi = Math.ceil(Math.max(...clocks) / 60) * 60;
+    const H3 = 150, top3 = 6, bottom3 = 4, plotH3 = H3 - top3 - bottom3;
+    const ys = m => top3 + (m - lo) / Math.max(hi - lo, 60) * plotH3;
+    const svg3 = svgEl('svg', { viewBox: `0 0 ${W} ${H3}`, height: H3 }, sleepChartEl);
+    for (let m = Math.ceil(lo / 120) * 120; m <= hi; m += 120) {
+      svgEl('line', { x1: left, x2: W - right, y1: ys(m), y2: ys(m), stroke: 'var(--chart-grid)', 'stroke-width': 1 }, svg3);
+      const h = (m / 60) % 24;
+      const t = svgEl('text', { x: left - 8, y: ys(m) + 3.5, 'text-anchor': 'end' }, svg3);
+      t.textContent = h === 0 ? '12a' : h === 12 ? '12p' : (h % 12) + (h < 12 ? 'a' : 'p');
+    }
+    // thin bars: when sleep starts and ends is the point, not a block of color
+    const sw = Math.max(1, Math.min(6, step * 0.55));
+    days.forEach((d, i) => {
+      const s = d.sleep;
+      if (!s) return;
+      const x = xc(i);
+      const onset = s.asleep != null ? s.asleep : s.bed;
+      if (s.bed != null && s.asleep != null && s.asleep > s.bed) {
+        // in bed, not yet asleep; drawn in the warning color when the gap looks implausible
+        svgEl('line', { x1: x, x2: x, y1: ys(s.bed), y2: ys(s.asleep),
+                        stroke: s.flagged ? 'var(--danger)' : 'var(--chart-sleep)', 'stroke-width': 1.5,
+                        'stroke-linecap': 'round', opacity: s.flagged ? 0.9 : 0.55 }, svg3);
+      }
+      if (onset != null && s.wake != null) {
+        // lighter when there was no fell-asleep time and bedtime stands in for it
+        svgEl('rect', { x: x - sw / 2, y: ys(onset), width: sw, height: Math.max(1, ys(s.wake) - ys(onset)),
+                        rx: Math.min(4, sw / 2), fill: 'var(--chart-sleep)', opacity: s.onset_is_bedtime ? 0.5 : 1 }, svg3);
+      } else {
+        // only one end known: a short tick where it is
+        for (const m of [onset, s.wake]) if (m != null)
+          svgEl('line', { x1: x - sw / 2, x2: x + sw / 2, y1: ys(m), y2: ys(m), stroke: 'var(--chart-sleep)', 'stroke-width': 2, 'stroke-linecap': 'round' }, svg3);
+      }
+    });
+    crosshairs.push(svgEl('line', { x1: 0, x2: 0, y1: top3, y2: top3 + plotH3, stroke: 'var(--ink)', 'stroke-width': 1, opacity: 0, 'pointer-events': 'none' }, svg3));
+  }
+
   chartView = { days, events, meds, step, left, xc, crosshairs };
   hideTip();
 
@@ -3375,6 +3427,32 @@ function dayContext(i) {
     ev: events.filter(e => e.start <= date && e.end >= date),
     md: meds.filter(m => m.date === date),
   };
+}
+
+function fmtClockMin(m) {
+  const d = new Date(2000, 0, 1, 0, 0);
+  d.setMinutes(Math.round(m) % 1440);
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+function fmtHours(h) {
+  const hh = Math.floor(h), mm = Math.round((h - hh) * 60);
+  return mm === 60 ? `${hh + 1}h` : (mm ? `${hh}h ${mm}m` : `${hh}h`);
+}
+
+// Readout lines for the night before a day: [label, value, muted]
+function sleepText(s) {
+  if (!s) return [['Sleep', 'nothing logged the night before', true]];
+  const out = [];
+  const onset = s.asleep != null ? s.asleep : s.bed;
+  if (s.hours != null) out.push(['Sleep', `${fmtHours(s.hours)} (${fmtClockMin(onset)} → ${fmtClockMin(s.wake)})`]);
+  else out.push(['Sleep', [s.bed != null ? 'bed ' + fmtClockMin(s.bed) : 'no bedtime',
+                           s.asleep != null ? 'asleep ' + fmtClockMin(s.asleep) : null,
+                           s.wake != null ? 'up ' + fmtClockMin(s.wake) : 'no wake time'].filter(Boolean).join(', '), true]);
+  if (s.hours != null && s.onset_is_bedtime) out.push(['', 'no fell-asleep time, so counted from bedtime', true]);
+  if (s.latency != null && s.bed != null && !s.flagged) out.push(['In bed', `${fmtClockMin(s.bed)}, asleep after ${Math.round(s.latency)} min`, true]);
+  if (s.flagged) out.push(['Check', `${Math.round(s.latency)} min from bed to asleep looks off. Worth checking that night's times.`]);
+  return out;
 }
 
 function medText(m) {
@@ -3404,6 +3482,7 @@ function showTip(i) {
   const ratedOnly = d.mean_rated != null && fmtNum(d.mean_rated) !== fmtNum(d.mean) ? ` (rated days only ${fmtNum(d.mean_rated)})` : '';
   line('7-day average', d.mean == null ? 'not enough rated days' : fmtNum(d.mean) + ratedOnly, d.mean == null);
   line('Behavior entries', d.n_negative + (d.max_intensity != null ? ` (max intensity ${d.max_intensity})` : ''));
+  for (const t of sleepText(d.sleep)) line(t[0], t[1], t[2]);
   for (const e of ev) line('Context', e.category + (e.description ? ': ' + e.description : ''));
   for (const m of md) line('Medication', medText(m));
 
@@ -3424,11 +3503,13 @@ function hideTip() {
 function indexFromPointer(ev, el) {
   const r = el.getBoundingClientRect();
   const { step, left } = chartView;
-  const scale = r.width / (el.querySelector('svg').viewBox.baseVal.width || r.width);
+  const svg = el.querySelector('svg');
+  if (!svg) return tipIndex == null ? chartView.days.length - 1 : tipIndex;
+  const scale = r.width / (svg.viewBox.baseVal.width || r.width);
   return Math.floor(((ev.clientX - r.left) / scale - left) / step);
 }
 
-for (const el of [phaseChartEl, entriesChartEl]) {
+for (const el of [phaseChartEl, entriesChartEl, sleepChartEl]) {
   el.addEventListener('pointermove', ev => { if (chartView) showTip(indexFromPointer(ev, el)); });
   el.addEventListener('pointerdown', ev => { if (chartView) showTip(indexFromPointer(ev, el)); });
   el.addEventListener('pointerleave', ev => { if (ev.pointerType === 'mouse') hideTip(); });
@@ -3444,7 +3525,7 @@ phaseChartEl.addEventListener('keydown', ev => {
 phaseChartEl.addEventListener('blur', hideTip);
 // Tapping anywhere else on the page closes the tooltip on touch screens.
 document.addEventListener('pointerdown', ev => {
-  if (tipIndex != null && !phaseChartEl.contains(ev.target) && !entriesChartEl.contains(ev.target)) hideTip();
+  if (tipIndex != null && ![phaseChartEl, entriesChartEl, sleepChartEl].some(el => el.contains(ev.target))) hideTip();
 });
 
 document.getElementById('rangeControls').addEventListener('click', ev => {
@@ -3467,7 +3548,7 @@ function renderPhaseTable(days, events, meds) {
   wrap.textContent = '';
   const table = document.createElement('table');
   const head = table.createTHead().insertRow();
-  for (const [h, num] of [['Day', false], ['Rating', true], ['7-day avg', true], ['Rated only', true], ['Entries', true], ['Context / meds', false]]) {
+  for (const [h, num] of [['Day', false], ['Rating', true], ['7-day avg', true], ['Rated only', true], ['Entries', true], ['Sleep before', true], ['Context / meds', false]]) {
     const th = document.createElement('th'); th.textContent = h; if (num) th.className = 'num'; head.append(th);
   }
   const body = table.createTBody();
@@ -3479,6 +3560,7 @@ function renderPhaseTable(days, events, meds) {
       [fmtShortDay(d.date) + (d.partial ? ' (today)' : ''), false],
       [d.rating == null ? '–' : (d.imputed ? '4*' : String(d.rating)), true],
       [fmtNum(d.mean), true], [fmtNum(d.mean_rated), true], [String(d.n_negative), true],
+      [d.sleep && d.sleep.hours != null ? fmtHours(d.sleep.hours) + (d.sleep.flagged ? ' ?' : '') : '–', true],
       [[...ev.map(e => e.category + (e.description ? ': ' + e.description : '')), ...md.map(medText)].join('; '), false],
     ];
     for (const [text, num] of cells) { const td = tr.insertCell(); td.textContent = text; if (num) td.className = 'num'; }
