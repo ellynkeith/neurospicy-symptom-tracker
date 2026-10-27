@@ -19,6 +19,8 @@
     --danger: #a8574a;
   }
   * { box-sizing: border-box; }
+  /* Keep scrollIntoView targets clear of the sticky tab bar. */
+  html { scroll-padding-top: 64px; }
   body {
     margin: 0;
     background: var(--paper);
@@ -67,6 +69,45 @@
   .logged-by input:focus { outline: none; border-bottom-color: var(--teal); }
 
   section { margin-bottom: 36px; }
+
+  /* Tabs. The bar sticks to the top so switching is one tap from anywhere. */
+  .tabs {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    gap: 4px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+    margin: -8px 0 24px;
+    padding-top: 8px;
+  }
+  .tab {
+    flex: 1;
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--ink-soft);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 10px 8px;
+    cursor: pointer;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] {
+    color: var(--teal);
+    border-bottom-color: var(--teal);
+  }
+  .tab:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+  .insights-placeholder {
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+    border: 1px dashed var(--line);
+    border-radius: 4px;
+    padding: 20px 16px;
+  }
   .section-title {
     font-size: 0.75rem;
     letter-spacing: 0.08em;
@@ -363,6 +404,9 @@
   body.read-only .gap-ignore,
   body.read-only .stub-action { display: none; }
   body.read-only .gap-chip { pointer-events: none; }
+  /* Explains why the Log tab is nearly empty for the read-only login. */
+  .read-only-note { display: none; }
+  body.read-only .read-only-note { display: block; }
 
   details.daily-details {
     margin-bottom: 36px;
@@ -510,6 +554,19 @@
     </div>
   </header>
 
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button type="button" class="tab" role="tab" id="tabBtn-log" data-tab="log" aria-controls="tab-log">Log</button>
+    <button type="button" class="tab" role="tab" id="tabBtn-history" data-tab="history" aria-controls="tab-history">History</button>
+    <button type="button" class="tab" role="tab" id="tabBtn-insights" data-tab="insights" aria-controls="tab-insights">Insights</button>
+  </nav>
+
+  <!-- Panel ids are tab-<name>, not <name>, so the #log / #history hash
+       doesn't make the browser jump to an element. -->
+  <div class="tab-panel" id="tab-log" role="tabpanel" aria-labelledby="tabBtn-log" hidden>
+  <div class="demo-banner read-only-note">
+    This login can't add entries, so this tab only shows the context log.
+    Everything that's been logged is under History.
+  </div>
   <section id="newEntrySection">
     <div class="section-title" id="entrySectionTitle">New entry</div>
     <form id="entryForm">
@@ -744,7 +801,9 @@
     <div class="wetting-section-label event-list-label">Events</div>
     <div id="eventList"></div>
   </details>
+  </div>
 
+  <div class="tab-panel" id="tab-history" role="tabpanel" aria-labelledby="tabBtn-history" hidden>
   <section>
     <div class="toolbar">
       <div class="section-title" style="margin-bottom:0;">Entries</div>
@@ -766,6 +825,17 @@
     <div class="gap-strip" id="gapStrip" hidden></div>
     <div id="entriesList"></div>
   </section>
+  </div>
+
+  <div class="tab-panel" id="tab-insights" role="tabpanel" aria-labelledby="tabBtn-insights" hidden>
+  <section>
+    <div class="section-title">Insights</div>
+    <div class="insights-placeholder">
+      Charts that update as you log will show up here. First up: a rolling
+      7-day view of how the days have been going, with context events marked.
+    </div>
+  </section>
+  </div>
 </div>
 
 <script>
@@ -839,6 +909,7 @@ const VOCAB = {
 
 // Typing "wetting" as a new category sends people to the right form.
 function redirectToWettingForm() {
+  showTab('log');
   formStatus.textContent = "Wetting accidents go in Daily context → Wetting incidents, not as a category. Log any behavior around it here as a normal entry.";
   formStatus.classList.add('error');
   dailyDetails.open = true;
@@ -1109,6 +1180,7 @@ function fmtResponse(response) {
 }
 
 function startEditWetting(w) {
+  showTab('log');
   editingWettingId = w.id;
   editingWettingEntryDate = w.entry_date;
 
@@ -1408,6 +1480,7 @@ function confirmTimeButton(d) {
 }
 
 function startEditMedication(d) {
+  showTab('log');
   editingMedicationId = d.id;
   editingMedicationEntryDate = d.entry_date;
   editingMedicationOriginal = d;
@@ -1922,6 +1995,7 @@ function fmtShortDay(dateStr) {
 
 // Open the Daily Context panel on a date and put the cursor where the gap is.
 function openDailyFor(dateStr, key) {
+  showTab('log');
   dailyDetails.open = true;
   if (dailyDateInput.value !== dateStr) {
     dailyDateInput.value = dateStr;
@@ -2679,6 +2753,7 @@ function resetEventForm() {
 }
 
 function startEditEvent(ev) {
+  showTab('log');
   editingEventId = ev.id;
   selectedEventCategory = ev.category;
   if (!eventCategories.includes(ev.category)) eventCategories.push(ev.category);
@@ -2761,6 +2836,7 @@ const entrySectionTitle = document.getElementById('entrySectionTitle');
 const cancelEditBtn = document.getElementById('cancelEditBtn');
 
 function startEditEntry(e) {
+  showTab('log');
   editingEntryId = e.id;
   editRestoreLoggedBy = loggedByInput.value;
 
@@ -2984,6 +3060,49 @@ dailyForm.addEventListener('submit', async (ev) => {
   }
 });
 
+// ---- tabs ----
+// The current tab lives in the URL hash (#log, #history, #insights) so a
+// refresh or bookmark lands on the same tab and the back button steps
+// through tab switches.
+const TABS = ['log', 'history', 'insights'];
+const tabsBar = document.querySelector('.tabs');
+let currentTab = null;
+
+function tabFromHash() {
+  const h = location.hash.replace('#', '');
+  return TABS.includes(h) ? h : null;
+}
+
+function applyTab(name) {
+  currentTab = name;
+  for (const t of TABS) {
+    document.getElementById(`tab-${t}`).hidden = (t !== name);
+    document.getElementById(`tabBtn-${t}`).setAttribute('aria-selected', String(t === name));
+  }
+}
+
+// Switch tabs. Callers that scroll to something right after (edit links,
+// gap chips) rely on this being synchronous: scrollIntoView on a hidden
+// panel does nothing.
+function showTab(name, { scrollTop = false } = {}) {
+  if (location.hash !== '#' + name) history.pushState(null, '', '#' + name);
+  if (currentTab === name) return;
+  applyTab(name);
+  // Only scroll if the user is below the tab bar; otherwise leave the page be.
+  if (scrollTop && window.scrollY > tabsBar.offsetTop) window.scrollTo(0, tabsBar.offsetTop);
+}
+
+tabsBar.addEventListener('click', ev => {
+  const btn = ev.target.closest('.tab');
+  if (btn) showTab(btn.dataset.tab, { scrollTop: true });
+});
+window.addEventListener('popstate', () => applyTab(tabFromHash() || defaultTab()));
+
+function defaultTab() {
+  // The read-only login can't log anything, so it starts on History.
+  return document.body.classList.contains('read-only') ? 'history' : 'log';
+}
+
 // ---- init ----
 async function loadWhoami() {
   try {
@@ -3001,7 +3120,9 @@ async function loadWhoami() {
 
 (async function init() {
   dailyDateInput.value = todayStr();
+  if (tabFromHash()) applyTab(tabFromHash());
   await loadWhoami();
+  if (!currentTab) applyTab(defaultTab());
   await loadCategories();
   await loadSituations();
   await loadMedications();

@@ -7,3 +7,7 @@
 .venv/
 __pycache__/
 Claude outputs/
+
+# Analysis outputs contain real data (see analysis/README.md)
+*.ipynb
+analysis/**/*.csv

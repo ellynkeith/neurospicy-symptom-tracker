@@ -33,6 +33,9 @@ Live at [behavior-tracker-st8g.onrender.com](https://behavior-tracker-st8g.onren
 - [ ] Per-Person Accounts: currently one shared household login
 - [ ] Custom Trackers: user-defined trackers (day-level like sleep, or event-level like wetting/medications) with typed fields, so diagnosis-specific presets can ship their own tracked metrics
 
+## Analysis ##
+`analysis/` turns a data export into tidy tables for pattern-finding, with every data-cleaning rule written down as a numbered step (see `analysis/README.md`). Only code and generic rules live in the repo; exports, record-specific overrides, built tables and notebooks stay in the gitignored `Claude outputs/` folder.
+
 ## Architecture ##
 Caregiver's Device → FastAPI Backend → Postgres (Neon) → Shared History Across All Devices
 
