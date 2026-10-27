@@ -28,13 +28,17 @@ Live at [behavior-tracker-st8g.onrender.com](https://behavior-tracker-st8g.onren
 - [x] Shared Login: household-wide password gate so the log isn't wide open to the internet
 - [x] Read-Only Login: an optional second login (`VIEWER_PASSWORD`) that can see and export the real log but not change it — for a co-parent, grandparent, or clinician. The server refuses every write from that login; the page just hides the editing controls
 - [x] Demo Mode: a separate login serves sample data so anyone can see how it works without seeing (or risking) the real log
-- [ ] Data Insights: surface patterns over time — frequency by category, trends by setting or time of day, common situations/demands, correlations with sleep and medication timing
+- [x] Tabs: Log, History and Insights, with the tab in the URL so refresh, bookmarks and the back button keep your place
+- [x] Insights, phase line: the day rating's 7-day average (with and without "good day"-only days), daily behavior-entry counts, context events and medication changes on one timeline; recomputed every time the tab opens, with a table view
+- [ ] More insights: frequency by category, trends by setting or time of day, common situations/demands, correlations with sleep and medication timing
 - [ ] Automated Backups: beyond the manual CSV export
 - [ ] Per-Person Accounts: currently one shared household login
 - [ ] Custom Trackers: user-defined trackers (day-level like sleep, or event-level like wetting/medications) with typed fields, so diagnosis-specific presets can ship their own tracked metrics
 
 ## Analysis ##
 `analysis/` turns a data export into tidy tables for pattern-finding, with every data-cleaning rule written down as a numbered step (see `analysis/README.md`). Only code and generic rules live in the repo; exports, record-specific overrides, built tables and notebooks stay in the gitignored `Claude outputs/` folder.
+
+The app's **Insights** tab runs the same package on the server (`GET /api/insights`), on the same CSVs an export produces, so the app and the notebooks can't disagree. Record-specific overrides reach the server through the `ANALYSIS_OVERRIDES` environment variable (paste the contents of `overrides.json`); without it the generic rules still apply.
 
 ## Architecture ##
 Caregiver's Device → FastAPI Backend → Postgres (Neon) → Shared History Across All Devices

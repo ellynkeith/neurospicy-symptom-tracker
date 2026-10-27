@@ -1,7 +1,12 @@
 import csv
 import io
+import json
+import logging
+import os
 import re
 import zipfile
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Optional
 
 import psycopg2.extras
@@ -742,13 +747,9 @@ def _demo_export_rows(filename):
     return sorted(demo_store.list_medication_doses(), key=lambda r: key(r, "taken_time"))
 
 
-@router.get("/api/export")
-def export_all(request: Request, date: Optional[str] = None):
-    # The browser passes its local date for the filename -- the server runs
-    # in UTC, which would stamp evening exports with tomorrow's date.
-    if date is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
-        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
-    zip_name = f"behavior-tracker-export-{date}.zip" if date else "behavior-tracker-export.zip"
+def _export_csvs(request: Request) -> dict:
+    """{filename: CSV bytes} for every export table. Shared by the export and
+    by /api/insights, so the analysis always reads exactly what an export has."""
     tables = {}
     if is_demo(request):
         for filename, (_, columns, _) in EXPORT_TABLES.items():
@@ -761,13 +762,76 @@ def export_all(request: Request, date: Optional[str] = None):
                     # from the request, so string-building here is safe.
                     cur.execute(f"SELECT {', '.join(columns)} FROM {table} ORDER BY {order_by}")
                     tables[filename] = (columns, cur.fetchall())
+    return {filename: _to_csv(columns, rows) for filename, (columns, rows) in tables.items()}
 
+
+@router.get("/api/export")
+def export_all(request: Request, date: Optional[str] = None):
+    # The browser passes its local date for the filename -- the server runs
+    # in UTC, which would stamp evening exports with tomorrow's date.
+    if date is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    zip_name = f"behavior-tracker-export-{date}.zip" if date else "behavior-tracker-export.zip"
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for filename, (columns, rows) in tables.items():
-            zf.writestr(filename, _to_csv(columns, rows))
+        for filename, csv_bytes in _export_csvs(request).items():
+            zf.writestr(filename, csv_bytes)
     return Response(
         content=zip_buf.getvalue(),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Insights: the analysis package (analysis/tracker_analysis) run on the same
+# CSVs an export would produce, so the app and the notebooks can't disagree.
+#
+# Record-specific overrides (overrides.json) can't live in this public repo,
+# so the real login reads them from the ANALYSIS_OVERRIDES env var -- paste
+# the file's contents into it on Render. Unset = generic rules only. The demo
+# login never uses them.
+# ---------------------------------------------------------------------------
+log = logging.getLogger(__name__)
+LOCAL_TZ = ZoneInfo("America/New_York")
+_overrides_cache = {}
+
+
+def _real_overrides():
+    """(Overrides, status) from ANALYSIS_OVERRIDES; parsed once per process."""
+    from analysis.tracker_analysis import Overrides
+
+    if "v" not in _overrides_cache:
+        text = os.environ.get("ANALYSIS_OVERRIDES", "").strip()
+        if not text:
+            _overrides_cache["v"] = (Overrides(), "none")
+        else:
+            try:
+                _overrides_cache["v"] = (Overrides.from_dict(json.loads(text), source="ANALYSIS_OVERRIDES"), "applied")
+            except (ValueError, TypeError) as exc:  # bad JSON or unknown keys
+                log.error("ANALYSIS_OVERRIDES ignored: %s", exc)
+                _overrides_cache["v"] = (Overrides(), "invalid")
+    return _overrides_cache["v"]
+
+
+@router.get("/api/insights")
+def insights(request: Request, today: Optional[str] = None):
+    # Imported here, not at module load: pandas is slow to import and only
+    # this route needs it, so app startup (and Render's health check) stays fast.
+    from analysis.tracker_analysis import Overrides, Params, build, load_tables, phase_line
+
+    # The browser sends its local date (same reason as /api/export).
+    if today is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", today):
+        raise HTTPException(status_code=400, detail="today must be YYYY-MM-DD")
+    today = today or datetime.now(LOCAL_TZ).date().isoformat()
+
+    if is_demo(request):
+        ov, ov_status = Overrides(), "demo"
+    else:
+        ov, ov_status = _real_overrides()
+
+    raw = load_tables({name.removesuffix(".csv"): data for name, data in _export_csvs(request).items()})
+    if not any(len(raw[t]) for t in ("entries", "daily", "wetting_incidents", "medication_doses")):
+        return {"phase": None, "overrides": ov_status}
+    result = build(raw, ov, Params(through=today))
+    return {"phase": phase_line(result, partial_day=today), "overrides": ov_status}

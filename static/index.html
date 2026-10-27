@@ -101,12 +101,60 @@
     border-bottom-color: var(--teal);
   }
   .tab:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
-  .insights-placeholder {
-    color: var(--ink-soft);
-    font-size: 0.9rem;
-    border: 1px dashed var(--line);
-    border-radius: 4px;
-    padding: 20px 16px;
+  /* Insights. Chart colors were checked for colorblind separation and
+     contrast against --paper (dataviz validator); --chart-avg is a more
+     saturated teal than --teal because the brand teal reads gray as a line. */
+  :root {
+    --chart-avg: #00897b;
+    --chart-bar: #c9783a;
+    --chart-grid: #e7dfcf;
+  }
+  .insight-card { position: relative; margin-bottom: 28px; }
+  .insight-title { font-size: 1.15rem; margin-bottom: 2px; }
+  .insight-sub { margin: 0 0 12px; font-size: 0.85rem; color: var(--ink-soft); }
+  .insight-controls { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .seg button {
+    font: inherit; font-size: 0.8rem; color: var(--ink-soft);
+    background: #fff; border: none; padding: 5px 12px; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--teal); color: #fff; }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 4px 14px;
+    font-size: 0.75rem; color: var(--ink-soft); margin-bottom: 6px;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend svg { flex: none; }
+  .chart { position: relative; touch-action: pan-y; }
+  .chart svg { display: block; width: 100%; overflow: visible; }
+  .chart:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .chart-label {
+    font-size: 0.75rem; color: var(--ink-soft);
+    margin: 14px 0 2px;
+  }
+  .chart text { font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 10.5px; fill: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .insight-card.loading .chart { opacity: 0.45; transition: opacity 0.15s; }
+  /* Day details sit in a fixed box under the charts rather than a floating
+     tooltip, which covered most of the chart at phone width. */
+  .chart-tip {
+    margin-top: 10px; min-height: 3.2em;
+    background: #fff; border: 1px solid var(--line); border-radius: 4px;
+    padding: 8px 10px; font-size: 0.8rem; line-height: 1.4;
+  }
+  .chart-tip b { font-weight: 600; }
+  .chart-tip .muted { color: var(--ink-soft); }
+  .chart-tip div + div { margin-top: 2px; }
+  .insight-note { font-size: 0.8rem; color: var(--ink-soft); margin: 12px 0 8px; }
+  .insight-warn { font-size: 0.8rem; color: var(--danger); margin: 0 0 8px; }
+  details.insight-table summary { font-size: 0.8rem; color: var(--teal); cursor: pointer; }
+  .insight-table table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
+  .insight-table th, .insight-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .insight-table td.num, .insight-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .insight-table th { font-weight: 500; color: var(--ink-soft); }
+  .insights-empty {
+    color: var(--ink-soft); font-size: 0.9rem;
+    border: 1px dashed var(--line); border-radius: 4px; padding: 20px 16px;
   }
   .section-title {
     font-size: 0.75rem;
@@ -830,10 +878,39 @@
   <div class="tab-panel" id="tab-insights" role="tabpanel" aria-labelledby="tabBtn-insights" hidden>
   <section>
     <div class="section-title">Insights</div>
-    <div class="insights-placeholder">
-      Charts that update as you log will show up here. First up: a rolling
-      7-day view of how the days have been going, with context events marked.
+    <div class="insights-empty" id="insightsEmpty" hidden></div>
+    <div class="insight-card" id="phaseCard" hidden>
+      <h3 class="insight-title">How the days have been going</h3>
+      <p class="insight-sub">Overall day rating (1 = rough, 5 = great) and its 7-day average.</p>
+      <p class="insight-warn" id="overridesWarn" hidden>
+        The server's ANALYSIS_OVERRIDES setting couldn't be read, so record-specific
+        cleanup rules aren't applied here.
+      </p>
+      <div class="insight-controls" id="rangeControls" hidden>
+        <div class="seg" role="group" aria-label="Date range">
+          <button type="button" data-range="56" aria-pressed="true">Last 8 weeks</button>
+          <button type="button" data-range="all" aria-pressed="false">All</button>
+        </div>
+      </div>
+      <div class="legend" aria-hidden="true">
+        <span><svg width="18" height="8"><line x1="1" y1="4" x2="17" y2="4" stroke="var(--chart-avg)" stroke-width="2" stroke-linecap="round"/></svg>7-day average</span>
+        <span><svg width="18" height="8"><line x1="1" y1="4" x2="17" y2="4" stroke="var(--ink-soft)" stroke-width="1.5" stroke-linecap="round"/></svg>average, rated days only</span>
+        <span><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="var(--ink-soft)"/></svg>day rating</span>
+        <span><svg width="10" height="10"><circle cx="5" cy="5" r="3.5" fill="var(--paper)" stroke="var(--ink-soft)" stroke-width="1.5"/></svg>"good day" only, counted as 4</span>
+        <span><svg width="12" height="10"><rect x="0" y="0" width="12" height="10" fill="var(--ink)" opacity="0.07"/></svg>context event</span>
+        <span><svg width="10" height="10"><path d="M1 1 L9 1 L5 6 Z" fill="var(--ink-soft)"/><line x1="5" y1="6" x2="5" y2="10" stroke="var(--ink-soft)"/></svg>medication change</span>
+      </div>
+      <div class="chart" id="phaseChart" tabindex="0" role="img" aria-label="Day rating chart. Use the left and right arrow keys to step through days."></div>
+      <div class="chart-label">Behavior entries per day (good-behavior entries not counted)</div>
+      <div class="chart" id="entriesChart" aria-hidden="true"></div>
+      <div class="chart-tip" id="chartTip" aria-live="polite"></div>
+      <p class="insight-note" id="phaseNote"></p>
+      <details class="insight-table">
+        <summary>Show as table</summary>
+        <div id="phaseTable"></div>
+      </details>
     </div>
+    <div class="status" id="insightsStatus"></div>
   </section>
   </div>
 </div>
@@ -3079,6 +3156,9 @@ function applyTab(name) {
     document.getElementById(`tab-${t}`).hidden = (t !== name);
     document.getElementById(`tabBtn-${t}`).setAttribute('aria-selected', String(t === name));
   }
+  // Recomputed every time the tab is opened, so it reflects whatever was
+  // just logged.
+  if (name === 'insights') loadInsights();
 }
 
 // Switch tabs. Callers that scroll to something right after (edit links,
@@ -3101,6 +3181,313 @@ window.addEventListener('popstate', () => applyTab(tabFromHash() || defaultTab()
 function defaultTab() {
   // The read-only login can't log anything, so it starts on History.
   return document.body.classList.contains('read-only') ? 'history' : 'log';
+}
+
+
+// ---- insights ----
+// The numbers come from /api/insights, which runs the same analysis code as
+// the notebooks (analysis/tracker_analysis). This file only draws them.
+const phaseCard = document.getElementById('phaseCard');
+const insightsEmpty = document.getElementById('insightsEmpty');
+const insightsStatus = document.getElementById('insightsStatus');
+const phaseChartEl = document.getElementById('phaseChart');
+const entriesChartEl = document.getElementById('entriesChart');
+const chartTip = document.getElementById('chartTip');
+const SVG_NS = 'http://www.w3.org/2000/svg';
+let insightsData = null;
+let insightsRange = '56';
+let chartView = null;   // what's currently drawn: { days, events, meds, step, left, crosshairs }
+let tipIndex = null;
+
+async function loadInsights() {
+  phaseCard.classList.add('loading');   // keep the old chart up, faded, while refetching
+  insightsStatus.textContent = '';
+  insightsStatus.classList.remove('error');
+  try {
+    const res = await fetch(`${API}/insights?today=${todayStr()}`);
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    insightsData = data;
+    document.getElementById('overridesWarn').hidden = data.overrides !== 'invalid';
+    renderInsights();
+  } catch (err) {
+    insightsStatus.textContent = 'Could not load insights. Check your connection and try again.';
+    insightsStatus.classList.add('error');
+  } finally {
+    phaseCard.classList.remove('loading');
+  }
+}
+
+function svgEl(tag, attrs, parent) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  if (parent) parent.appendChild(el);
+  return el;
+}
+
+function fmtTick(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function fmtNum(v) { return v == null ? '–' : (Math.round(v * 10) / 10).toFixed(1); }
+
+function renderInsights() {
+  const phase = insightsData && insightsData.phase;
+  const ratedTotal = phase ? phase.summary.rated_days + phase.summary.imputed_days : 0;
+  if (!phase || !phase.days.length) {
+    phaseCard.hidden = true;
+    insightsEmpty.hidden = false;
+    insightsEmpty.textContent = 'Nothing to chart yet. Rate a few days under Log → Daily context and the 7-day picture shows up here.';
+    return;
+  }
+  insightsEmpty.hidden = true;
+  phaseCard.hidden = false;
+
+  const all = phase.days;
+  const showRange = all.length > 56;
+  document.getElementById('rangeControls').hidden = !showRange;
+  const days = (showRange && insightsRange !== 'all') ? all.slice(-56) : all;
+  const first = days[0].date, last = days[days.length - 1].date;
+  const events = phase.events.filter(e => e.end >= first && e.start <= last);
+  const meds = phase.med_changes.filter(m => m.date >= first && m.date <= last);
+  const idx = {}; days.forEach((d, i) => { idx[d.date] = i; });
+
+  const W = Math.max(phaseChartEl.clientWidth, 280);
+  const left = 24, right = 6;
+  const n = days.length;
+  const step = (W - left - right) / n;
+  const xc = i => left + step * (i + 0.5);
+  const crosshairs = [];
+
+  // -------- rating chart
+  const H = 210, top = 16, bottom = 22, plotH = H - top - bottom;
+  const y = r => top + (5.4 - r) / (5.4 - 0.6) * plotH;
+  phaseChartEl.innerHTML = '';
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, height: H }, phaseChartEl);
+
+  // context events: faint bands, overlaps get slightly darker
+  for (const e of events) {
+    const i0 = e.start < first ? 0 : idx[e.start];
+    const i1 = e.end > last ? n - 1 : idx[e.end];
+    svgEl('rect', { x: left + step * i0, y: top - 6, width: step * (i1 - i0 + 1), height: plotH + 6,
+                    fill: 'var(--ink)', opacity: 0.07 }, svg);
+  }
+  for (let r = 1; r <= 5; r++) {
+    svgEl('line', { x1: left, x2: W - right, y1: y(r), y2: y(r), stroke: 'var(--chart-grid)', 'stroke-width': 1 }, svg);
+    const t = svgEl('text', { x: left - 8, y: y(r) + 3.5, 'text-anchor': 'end' }, svg);
+    t.textContent = r;
+  }
+  // medication changes: hairline + small marker at the top
+  const medDays = [...new Set(meds.map(m => m.date))];
+  for (const d of medDays) {
+    const x = xc(idx[d]);
+    svgEl('line', { x1: x, x2: x, y1: top - 4, y2: top + plotH, stroke: 'var(--ink-soft)', 'stroke-width': 1, opacity: 0.55 }, svg);
+    svgEl('path', { d: `M${x - 4} ${top - 10} L${x + 4} ${top - 10} L${x} ${top - 4} Z`, fill: 'var(--ink-soft)' }, svg);
+  }
+  // daily ratings (under the lines: the average is the story). Dots shrink
+  // when months of days share a phone-width chart.
+  const dotR = Math.max(1.75, Math.min(4, step / 2));
+  days.forEach((d, i) => {
+    if (d.rating == null) return;
+    if (d.imputed) svgEl('circle', { cx: xc(i), cy: y(d.rating), r: Math.max(1.5, dotR - 0.5), fill: 'var(--paper)', stroke: 'var(--ink-soft)', 'stroke-width': dotR >= 3 ? 1.5 : 1 }, svg);
+    else svgEl('circle', { cx: xc(i), cy: y(d.rating), r: dotR, fill: 'var(--ink-soft)', stroke: 'var(--paper)', 'stroke-width': dotR >= 3 ? 2 : 1, 'paint-order': 'stroke' }, svg);
+  });
+  // lines break where there aren't enough rated days for an average
+  const linePath = key => {
+    let dStr = '', pen = false;
+    days.forEach((d, i) => {
+      if (d[key] == null) { pen = false; return; }
+      dStr += `${pen ? 'L' : 'M'}${xc(i).toFixed(1)} ${y(d[key]).toFixed(1)} `;
+      pen = true;
+    });
+    return dStr;
+  };
+  const lineAttrs = { fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+  svgEl('path', { ...lineAttrs, d: linePath('mean_rated'), stroke: 'var(--ink-soft)', 'stroke-width': 1.5 }, svg);
+  svgEl('path', { ...lineAttrs, d: linePath('mean'), stroke: 'var(--chart-avg)', 'stroke-width': 2 }, svg);
+  // single isolated averages would be invisible as a path: draw a dot
+  days.forEach((d, i) => {
+    if (d.mean != null && (days[i - 1] || {}).mean == null && (days[i + 1] || {}).mean == null)
+      svgEl('circle', { cx: xc(i), cy: y(d.mean), r: 3, fill: 'var(--chart-avg)' }, svg);
+  });
+  // x-axis labels, spaced so they never collide
+  const minGap = 46;
+  const every = Math.max(1, Math.ceil(minGap / step));
+  const tickIdx = [];
+  if (every <= 2) {
+    for (let i = n - 1; i >= 0; i -= every) tickIdx.push(i);
+  } else {
+    const weeks = Math.ceil(every / 7);
+    let k = 0;
+    for (let i = n - 1; i >= 0; i--) {
+      if (new Date(days[i].date + 'T00:00:00').getDay() === 1) { if (k % weeks === 0) tickIdx.push(i); k++; }
+    }
+  }
+  for (const i of tickIdx) {
+    const x = Math.min(Math.max(xc(i), left + 16), W - right - 16);
+    const t = svgEl('text', { x, y: H - 6, 'text-anchor': 'middle' }, svg);
+    t.textContent = fmtTick(days[i].date);
+  }
+  crosshairs.push(svgEl('line', { x1: 0, x2: 0, y1: top - 6, y2: top + plotH, stroke: 'var(--ink)', 'stroke-width': 1, opacity: 0, 'pointer-events': 'none' }, svg));
+
+  // -------- entries chart (same x scale)
+  const H2 = 84, top2 = 8, bottom2 = 4, plotH2 = H2 - top2 - bottom2;
+  const maxN = Math.max(3, ...days.map(d => d.n_negative));
+  const y2 = v => top2 + plotH2 - v / maxN * plotH2;
+  entriesChartEl.innerHTML = '';
+  const svg2 = svgEl('svg', { viewBox: `0 0 ${W} ${H2}`, height: H2 }, entriesChartEl);
+  for (const v of [0, maxN]) {
+    svgEl('line', { x1: left, x2: W - right, y1: y2(v), y2: y2(v), stroke: 'var(--chart-grid)', 'stroke-width': 1 }, svg2);
+    const t = svgEl('text', { x: left - 8, y: y2(v) + 3.5, 'text-anchor': 'end' }, svg2);
+    t.textContent = v;
+  }
+  // 2px gap between bars while there's room; packed tighter once days get thin
+  const barW = step >= 5 ? Math.min(24, step - 2) : Math.max(0.6, step * 0.75);
+  const rad = Math.min(4, barW / 2);
+  days.forEach((d, i) => {
+    if (!d.n_negative) return;
+    const x0 = xc(i) - barW / 2, x1 = x0 + barW, yt = y2(d.n_negative), yb = y2(0);
+    const rr = Math.min(rad, yb - yt);
+    // rounded data end, square at the baseline
+    const path = `M${x0} ${yb} L${x0} ${yt + rr} Q${x0} ${yt} ${x0 + rr} ${yt} L${x1 - rr} ${yt} Q${x1} ${yt} ${x1} ${yt + rr} L${x1} ${yb} Z`;
+    svgEl('path', { d: path, fill: 'var(--chart-bar)', opacity: d.partial ? 0.45 : 1 }, svg2);
+  });
+  crosshairs.push(svgEl('line', { x1: 0, x2: 0, y1: top2, y2: top2 + plotH2, stroke: 'var(--ink)', 'stroke-width': 1, opacity: 0, 'pointer-events': 'none' }, svg2));
+
+  chartView = { days, events, meds, step, left, xc, crosshairs };
+  hideTip();
+
+  // -------- note + table
+  const s = phase.summary;
+  let note = `Based on ${s.rated_days} rated day${s.rated_days === 1 ? '' : 's'}` +
+    (s.imputed_days ? ` and ${s.imputed_days} day${s.imputed_days === 1 ? '' : 's'} marked only "good day" (counted as 4; the gray line leaves them out).` : '.') +
+    ` Each day's average covers the 3 days either side, and needs at least ${phase.min_days} of those 7 days rated, so the most recent days fill in as more days get rated.`;
+  if (ratedTotal < phase.min_days) note = `The average needs at least ${phase.min_days} rated days in a week. ` + note;
+  document.getElementById('phaseNote').textContent = note;
+  renderPhaseTable(days, events, meds);
+}
+
+function dayContext(i) {
+  const { days, events, meds } = chartView;
+  const date = days[i].date;
+  return {
+    ev: events.filter(e => e.start <= date && e.end >= date),
+    md: meds.filter(m => m.date === date),
+  };
+}
+
+function medText(m) {
+  if (m.change === 'changed') return `${m.drug}: ${m.from || '?'} → ${m.to || '?'}`;
+  if (m.change === 'started') return `${m.drug} started${m.to ? ' (' + m.to + ')' : ''}`;
+  return `${m.drug} stopped`;
+}
+
+function showTip(i) {
+  if (!chartView) return;
+  const { days, xc, crosshairs } = chartView;
+  tipIndex = Math.max(0, Math.min(days.length - 1, i));
+  const d = days[tipIndex];
+  const { ev, md } = dayContext(tipIndex);
+  chartTip.textContent = '';
+  const line = (label, value, muted) => {
+    const div = document.createElement('div');
+    if (label) { const b = document.createElement('span'); b.className = 'muted'; b.textContent = label + ' '; div.append(b); }
+    const v = document.createElement(muted ? 'span' : 'b');
+    if (muted) v.className = 'muted';
+    v.textContent = value;
+    div.append(v);
+    chartTip.append(div);
+  };
+  line('', fmtShortDay(d.date) + (d.partial ? ' (today, still in progress)' : ''));
+  line('Rating', d.rating == null ? 'not rated' : (d.imputed ? '"good day" only, counted as 4' : String(d.rating)), d.rating == null);
+  const ratedOnly = d.mean_rated != null && fmtNum(d.mean_rated) !== fmtNum(d.mean) ? ` (rated days only ${fmtNum(d.mean_rated)})` : '';
+  line('7-day average', d.mean == null ? 'not enough rated days' : fmtNum(d.mean) + ratedOnly, d.mean == null);
+  line('Behavior entries', d.n_negative + (d.max_intensity != null ? ` (max intensity ${d.max_intensity})` : ''));
+  for (const e of ev) line('Context', e.category + (e.description ? ': ' + e.description : ''));
+  for (const m of md) line('Medication', medText(m));
+
+  const x = xc(tipIndex);
+  for (const c of crosshairs) { c.setAttribute('x1', x); c.setAttribute('x2', x); c.setAttribute('opacity', 0.35); }
+}
+
+function hideTip() {
+  tipIndex = null;
+  chartTip.textContent = '';
+  const hint = document.createElement('span');
+  hint.className = 'muted';
+  hint.textContent = (window.matchMedia('(hover: hover)').matches ? 'Hover over' : 'Tap') + ' a day for details.';
+  chartTip.append(hint);
+  if (chartView) for (const c of chartView.crosshairs) c.setAttribute('opacity', 0);
+}
+
+function indexFromPointer(ev, el) {
+  const r = el.getBoundingClientRect();
+  const { step, left } = chartView;
+  const scale = r.width / (el.querySelector('svg').viewBox.baseVal.width || r.width);
+  return Math.floor(((ev.clientX - r.left) / scale - left) / step);
+}
+
+for (const el of [phaseChartEl, entriesChartEl]) {
+  el.addEventListener('pointermove', ev => { if (chartView) showTip(indexFromPointer(ev, el)); });
+  el.addEventListener('pointerdown', ev => { if (chartView) showTip(indexFromPointer(ev, el)); });
+  el.addEventListener('pointerleave', ev => { if (ev.pointerType === 'mouse') hideTip(); });
+}
+phaseChartEl.addEventListener('keydown', ev => {
+  if (!chartView) return;
+  if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+    ev.preventDefault();
+    const start = tipIndex == null ? chartView.days.length - 1 : tipIndex + (ev.key === 'ArrowLeft' ? -1 : 1);
+    showTip(start);
+  } else if (ev.key === 'Escape') hideTip();
+});
+phaseChartEl.addEventListener('blur', hideTip);
+// Tapping anywhere else on the page closes the tooltip on touch screens.
+document.addEventListener('pointerdown', ev => {
+  if (tipIndex != null && !phaseChartEl.contains(ev.target) && !entriesChartEl.contains(ev.target)) hideTip();
+});
+
+document.getElementById('rangeControls').addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-range]');
+  if (!b) return;
+  insightsRange = b.dataset.range;
+  for (const x of document.querySelectorAll('#rangeControls button'))
+    x.setAttribute('aria-pressed', String(x === b));
+  renderInsights();
+});
+
+let insightsResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(insightsResizeTimer);
+  insightsResizeTimer = setTimeout(() => { if (currentTab === 'insights' && insightsData) renderInsights(); }, 150);
+});
+
+function renderPhaseTable(days, events, meds) {
+  const wrap = document.getElementById('phaseTable');
+  wrap.textContent = '';
+  const table = document.createElement('table');
+  const head = table.createTHead().insertRow();
+  for (const [h, num] of [['Day', false], ['Rating', true], ['7-day avg', true], ['Rated only', true], ['Entries', true], ['Context / meds', false]]) {
+    const th = document.createElement('th'); th.textContent = h; if (num) th.className = 'num'; head.append(th);
+  }
+  const body = table.createTBody();
+  chartView && [...days].reverse().forEach(d => {
+    const tr = body.insertRow();
+    const i = days.indexOf(d);
+    const { ev, md } = dayContext(i);
+    const cells = [
+      [fmtShortDay(d.date) + (d.partial ? ' (today)' : ''), false],
+      [d.rating == null ? '–' : (d.imputed ? '4*' : String(d.rating)), true],
+      [fmtNum(d.mean), true], [fmtNum(d.mean_rated), true], [String(d.n_negative), true],
+      [[...ev.map(e => e.category + (e.description ? ': ' + e.description : '')), ...md.map(medText)].join('; '), false],
+    ];
+    for (const [text, num] of cells) { const td = tr.insertCell(); td.textContent = text; if (num) td.className = 'num'; }
+  });
+  wrap.append(table);
+  const foot = document.createElement('p');
+  foot.className = 'insight-note';
+  foot.textContent = '* "good day" only, counted as 4.';
+  wrap.append(foot);
 }
 
 // ---- init ----

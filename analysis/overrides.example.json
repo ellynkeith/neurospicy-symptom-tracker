@@ -1,0 +1,9 @@
+{
+  "_comment": "FAKE example. The real file lives at Claude outputs/analysis/overrides.json (gitignored).",
+  "wetting_response": {"101": "compliant"},
+  "wetting_exclude": {"102": "overnight accident"},
+  "exclude_entries": {"201": "day summary logged as an entry"},
+  "category_map": {"old name": "current name"},
+  "sleep_exclude": {"2026-01-03": "typo, can't recover"},
+  "pending": ["Example open decision"]
+}
